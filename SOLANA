@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Green Warden — Guardian of the Holders</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;900&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void: rgba(5,13,9,0.93);
+    --panel: rgba(10,23,16,0.9);
+    --panel-2: rgba(14,31,21,0.9);
+    --line: rgba(201,162,39,0.18);
+    --emerald: #1f6b42;
+    --emerald-2: #2f9159;
+    --flame: #5eeb8f;
+    --flame-soft: rgba(94,235,143,0.35);
+    --crimson: #6e1f1f;
+    --crimson-2: #a1372c;
+    --crimson-bright: #d64f3c;
+    --gold: #c9a227;
+    --gold-soft: rgba(201,162,39,0.5);
+    --parchment: #e9e2cd;
+    --ink: #b9c2b6;
+    --ink-dim: #79857c;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth; background:#050d09;}
+  body{
+    background:transparent;
+    color:var(--parchment);
+    font-family:'Crimson Text', serif;
+    overflow-x:hidden;
+    position:relative;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:0.001ms !important; animation-iteration-count:1 !important; transition-duration:0.001ms !important; scroll-behavior:auto !important;}
+  }
+
+  /* ---------- texture layer ---------- */
+  body::before{
+    content:"";
+    position:fixed; inset:0;
+    background-image:
+      radial-gradient(ellipse at 20% 10%, rgba(31,107,66,0.10), transparent 45%),
+      radial-gradient(ellipse at 80% 30%, rgba(110,31,31,0.08), transparent 40%),
+      radial-gradient(ellipse at 50% 90%, rgba(31,107,66,0.10), transparent 50%);
+    pointer-events:none;
+    z-index:0;
+  }
+  body::after{
+    content:"";
+    position:fixed; inset:0;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+    pointer-events:none;
+    z-index:1;
+    mix-blend-mode:overlay;
+  }
+
+  a{color:inherit;}
+  img{max-width:100%; display:block;}
+  .wrap{max-width:1140px; margin:0 auto; padding:0 28px; position:relative; z-index:2;}
+  section{position:relative; z-index:2;}
+
+  h1,h2,h3,.eyebrow{font-family:'Cinzel', serif; letter-spacing:0.04em;}
+  .eyebrow{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.72rem;
+    letter-spacing:0.35em;
+    text-transform:uppercase;
+    color:var(--gold);
+    display:flex; align-items:center; gap:14px;
+    margin-bottom:22px;
+  }
+  .eyebrow::before{content:""; width:26px; height:1px; background:var(--gold-soft);}
+
+  /* ---------- living background: the Warden's aura ---------- */
+  #warden-roam{
+    position:fixed;
+    right:0;
+    bottom:0;
+    z-index:1;
+    pointer-events:none;
+    width:min(34vw, 420px);
+    opacity:0;
+    transition:opacity 0.6s ease;
+  }
+  #warden-roam.is-visible{ opacity:1; }
+  #warden-portrait{
+    position:relative;
+    -webkit-mask-image:radial-gradient(ellipse 62% 68% at 50% 42%, #000 55%, transparent 88%);
+    mask-image:radial-gradient(ellipse 62% 68% at 50% 42%, #000 55%, transparent 88%);
+  }
+  #warden-portrait img{
+    width:100%; display:block;
+    filter:saturate(1.12) contrast(1.06);
+  }
+  .wg-glow{
+    position:absolute;
+    border-radius:50%;
+    background:radial-gradient(circle, rgba(120,255,170,0.95) 0%, rgba(94,235,143,0.55) 35%, rgba(94,235,143,0) 72%);
+    filter:blur(3px);
+    mix-blend-mode:screen;
+    animation:wg-pulse 2.6s ease-in-out infinite;
+  }
+  .wg-eye-l{ width:16px; height:16px; left:38.5%; top:24.5%; animation-delay:0.15s; }
+  .wg-eye-r{ width:16px; height:16px; left:50%; top:23.5%; }
+  .wg-candle{ width:70px; height:70px; left:34%; top:46%; animation:wg-pulse 2.1s ease-in-out infinite; filter:blur(6px); }
+  @keyframes wg-pulse{
+    0%,100%{ transform:scale(1); opacity:0.85; }
+    50%{ transform:scale(1.35); opacity:1; }
+  }
+  .wg-ember{
+    position:absolute;
+    width:5px; height:5px; border-radius:50%;
+    background:radial-gradient(circle, rgba(150,255,190,1), rgba(94,235,143,0));
+    mix-blend-mode:screen;
+    left:40%; top:52%;
+    animation:wg-rise 3.2s ease-in infinite;
+  }
+  .wg-ember:nth-child(2){ left:44%; top:50%; animation-delay:0.6s; animation-duration:3.8s; }
+  .wg-ember:nth-child(3){ left:47%; top:53%; animation-delay:1.3s; animation-duration:2.8s; }
+  .wg-ember:nth-child(4){ left:50%; top:49%; animation-delay:2s; animation-duration:3.4s; }
+  .wg-ember:nth-child(5){ left:37%; top:48%; animation-delay:0.9s; animation-duration:4s; }
+  @keyframes wg-rise{
+    0%{ transform:translate(0,0) scale(0.6); opacity:0; }
+    15%{ opacity:1; }
+    100%{ transform:translate(var(--drift,8px), -140px) scale(1.1); opacity:0; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .wg-glow, .wg-ember{ animation:none; opacity:0.7; }
+  }
+  @media (max-width:720px){
+    #warden-roam{ width:min(48vw, 260px); right:-6px; }
+  }
+
+  /* ---------- signature: the candle progress ---------- */
+  #candle-sig{
+    position:fixed;
+    right:22px;
+    bottom:28px;
+    z-index:50;
+    width:46px;
+    height:120px;
+    pointer-events:none;
+    filter:drop-shadow(0 0 10px rgba(94,235,143,0.45));
+  }
+  #candle-sig svg{width:100%; height:100%; display:block;}
+  #flame-clip-rect{ transition: y 0.15s linear, height 0.15s linear; }
+
+  /* ---------- nav ---------- */
+  nav{
+    position:fixed; top:0; left:0; right:0; z-index:40;
+    padding:18px 28px;
+    display:flex; justify-content:space-between; align-items:center;
+    background:linear-gradient(to bottom, rgba(5,13,9,0.92), transparent);
+    backdrop-filter:blur(2px);
+  }
+  .brand{
+    font-family:'Cinzel', serif; font-weight:700; font-size:1rem;
+    letter-spacing:0.14em; color:var(--parchment);
+    display:flex; align-items:center; gap:10px;
+  }
+  .brand svg{width:20px; height:20px;}
+  nav .links{display:flex; gap:28px; font-family:'JetBrains Mono', monospace; font-size:0.72rem; letter-spacing:0.12em; text-transform:uppercase;}
+  nav .links a{color:var(--ink); text-decoration:none; transition:color 0.25s;}
+  nav .links a:hover{color:var(--flame);}
+  @media (max-width:720px){ nav .links{display:none;} }
+
+  /* ---------- hero ---------- */
+  .hero{
+    min-height:100svh;
+    display:flex; align-items:flex-end;
+    position:relative;
+    background:
+      linear-gradient(to top, var(--void) 2%, rgba(5,13,9,0.55) 38%, rgba(5,13,9,0.25) 60%, rgba(5,13,9,0.75) 100%),
+      url('assets/warden-solo.png') center 22% / cover no-repeat;
+  }
+  .hero-inner{padding:0 28px 88px; width:100%; max-width:1140px; margin:0 auto;}
+  .hero h1{
+    font-size:clamp(2.6rem, 8vw, 6.2rem);
+    line-height:0.96;
+    color:var(--parchment);
+    text-shadow:0 0 46px rgba(94,235,143,0.28);
+    font-weight:900;
+  }
+  .hero h1 span{
+    display:block; color:var(--flame);
+    -webkit-text-stroke:0.5px rgba(94,235,143,0.4);
+  }
+  .hero .sub{
+    margin-top:22px; max-width:540px;
+    font-size:1.15rem; font-style:italic; color:var(--ink);
+    border-left:2px solid var(--gold-soft); padding-left:18px;
+  }
+  .hero .scrollcue{
+    margin-top:56px; font-family:'JetBrains Mono', monospace;
+    font-size:0.7rem; letter-spacing:0.3em; text-transform:uppercase;
+    color:var(--gold); opacity:0.8;
+    animation:pulse 2.6s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:0.5;} 50%{opacity:1;} }
+
+  /* ---------- section shells ---------- */
+  .band{ padding:120px 0; border-top:1px solid var(--line); }
+  .band.tight{padding:90px 0;}
+  .band-dark{background:linear-gradient(180deg, var(--void), var(--panel) 60%, var(--void));}
+
+  .lede{
+    font-size:1.5rem; line-height:1.55; max-width:760px;
+    color:var(--parchment);
+  }
+  .lede em{color:var(--flame); font-style:normal; font-weight:600;}
+  .lede .crim{color:var(--crimson-bright); font-style:normal; font-weight:600;}
+
+  /* ---------- chapter blocks (the origin saga) ---------- */
+  .chapter{
+    display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:center;
+    padding:100px 0;
+  }
+  .chapter.reverse{grid-template-columns:1fr 1fr;}
+  .chapter.reverse .ch-media{order:2;}
+  .chapter.reverse .ch-text{order:1;}
+  @media (max-width:860px){
+    .chapter, .chapter.reverse{grid-template-columns:1fr; gap:36px;}
+    .chapter.reverse .ch-media{order:1;}
+    .chapter.reverse .ch-text{order:2;}
+    .band{padding:70px 0;}
+  }
+  .ch-num{
+    font-family:'JetBrains Mono', monospace; color:var(--gold);
+    font-size:0.78rem; letter-spacing:0.25em; text-transform:uppercase;
+    margin-bottom:14px; display:block;
+  }
+  .chapter h2{font-size:clamp(1.7rem,3.4vw,2.5rem); color:var(--parchment); margin-bottom:22px; line-height:1.15;}
+  .chapter p{font-size:1.12rem; line-height:1.7; color:var(--ink); margin-bottom:16px;}
+  .chapter .quote{
+    font-style:italic; color:var(--flame); font-size:1.2rem;
+    border-left:2px solid var(--flame-soft); padding-left:18px; margin-top:20px;
+  }
+  .ch-media{
+    position:relative; border-radius:2px; overflow:hidden;
+    border:1px solid var(--line);
+  }
+  .ch-media img{width:100%; height:100%; object-fit:cover; display:block;}
+  .ch-media::after{
+    content:""; position:absolute; inset:0;
+    background:linear-gradient(180deg, transparent 60%, rgba(5,13,9,0.55));
+    pointer-events:none;
+  }
+  .tag-corrupt{color:var(--crimson-bright);}
+
+  /* ---------- world grid ---------- */
+  .grid-head{max-width:640px; margin-bottom:56px;}
+  .grid-head h2{font-size:clamp(1.8rem,3.6vw,2.7rem); color:var(--parchment); margin-bottom:16px;}
+  .grid-head p{color:var(--ink); font-size:1.08rem; line-height:1.65;}
+  .world-grid{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
+    background:var(--line); border:1px solid var(--line);
+  }
+  @media (max-width:900px){.world-grid{grid-template-columns:repeat(2,1fr);}}
+  @media (max-width:560px){.world-grid{grid-template-columns:1fr;}}
+  .world-card{
+    background:var(--panel); padding:34px 28px; min-height:190px;
+    transition:background 0.3s;
+  }
+  .world-card:hover{background:var(--panel-2);}
+  .world-card .glyph{font-size:1.5rem; margin-bottom:14px; color:var(--flame);}
+  .world-card h3{font-size:1.05rem; color:var(--parchment); margin-bottom:10px; letter-spacing:0.02em;}
+  .world-card p{font-size:0.97rem; color:var(--ink-dim); line-height:1.55;}
+
+  /* ---------- guardians / identity ---------- */
+  .guardians{
+    background:
+      linear-gradient(100deg, rgba(5,13,9,0.94) 30%, rgba(5,13,9,0.6) 65%, rgba(5,13,9,0.85)),
+      url('assets/warden-armored.png') center 30% / cover no-repeat;
+    padding:130px 0;
+  }
+  .guardians-inner{max-width:620px;}
+  .guardians h2{font-size:clamp(1.9rem,4vw,2.9rem); margin-bottom:20px; color:var(--parchment);}
+  .guardians p{color:var(--ink); font-size:1.1rem; line-height:1.7; margin-bottom:18px;}
+  .titles-row{display:flex; gap:14px; flex-wrap:wrap; margin:30px 0 34px;}
+  .title-pill{
+    font-family:'JetBrains Mono', monospace; font-size:0.78rem; letter-spacing:0.14em;
+    text-transform:uppercase; padding:9px 16px; border:1px solid var(--gold-soft);
+    color:var(--gold); border-radius:2px;
+  }
+  .ask{
+    font-style:italic; font-size:1.25rem; color:var(--flame);
+    border-left:2px solid var(--flame-soft); padding-left:18px;
+  }
+
+  /* ---------- villain teaser ---------- */
+  .villain{
+    padding:130px 0; text-align:center;
+    background:radial-gradient(ellipse at 50% 40%, rgba(110,31,31,0.16), transparent 60%), var(--void);
+  }
+  .villain .eyebrow{justify-content:center;}
+  .villain .eyebrow::before{display:none;}
+  .villain h2{
+    font-size:clamp(2rem,5vw,3.6rem); color:var(--crimson-bright);
+    text-shadow:0 0 50px rgba(214,79,60,0.35);
+    max-width:820px; margin:0 auto 26px;
+    line-height:1.15;
+  }
+  .villain p{max-width:560px; margin:0 auto; color:var(--ink); font-size:1.08rem; font-style:italic;}
+  .eyes{
+    display:flex; justify-content:center; gap:22px; margin:44px 0 10px;
+  }
+  .eyes span{
+    width:10px; height:10px; border-radius:50%;
+    background:var(--crimson-bright);
+    box-shadow:0 0 16px 3px rgba(214,79,60,0.7);
+    animation:blink 3.4s infinite ease-in-out;
+  }
+  .eyes span:nth-child(2){animation-delay:0.4s;}
+  @keyframes blink{ 0%,88%,100%{opacity:1;} 92%{opacity:0.1;} }
+
+  /* ---------- prophecy ---------- */
+  .prophecy{
+    padding:110px 0;
+    background:linear-gradient(180deg, var(--void), var(--panel));
+    border-top:1px solid var(--line);
+    text-align:center;
+  }
+  .prophecy .scroll-text{
+    max-width:680px; margin:0 auto; font-size:1.4rem; line-height:1.75;
+    font-style:italic; color:var(--parchment);
+  }
+  .prophecy .scroll-text .hl{color:var(--gold);}
+
+  /* ---------- tokenomics ---------- */
+  .tokenomics h2{font-size:clamp(1.8rem,3.6vw,2.6rem); color:var(--parchment); margin-bottom:14px;}
+  .tokenomics > .wrap > p.lede{margin-bottom:56px;}
+  .token-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--line); border:1px solid var(--line); margin-bottom:56px;}
+  @media (max-width:820px){.token-grid{grid-template-columns:repeat(2,1fr);}}
+  .token-cell{background:var(--panel); padding:30px 24px;}
+  .token-cell .k{font-family:'JetBrains Mono', monospace; font-size:0.68rem; letter-spacing:0.2em; text-transform:uppercase; color:var(--gold); margin-bottom:10px;}
+  .token-cell .v{font-family:'Cinzel', serif; font-size:1.4rem; color:var(--parchment);}
+  .token-cell .v small{font-family:'JetBrains Mono', monospace; font-size:0.85rem; color:var(--ink-dim); display:block; margin-top:6px;}
+
+  .transparency{
+    display:flex; gap:20px; align-items:flex-start;
+    background:var(--panel); border:1px solid var(--line); padding:26px 28px;
+  }
+  .transparency .mark{color:var(--flame); font-size:1.3rem; line-height:1; margin-top:2px;}
+  .transparency p{color:var(--ink); font-size:0.98rem; line-height:1.6;}
+  .transparency strong{color:var(--parchment);}
+
+  /* ---------- CA / buy ---------- */
+  .buy{
+    padding:110px 0;
+    text-align:center;
+    background:radial-gradient(ellipse at 50% 30%, rgba(31,107,66,0.18), transparent 60%), var(--void);
+    border-top:1px solid var(--line);
+  }
+  .buy h2{font-size:clamp(1.9rem,4.2vw,3.1rem); color:var(--parchment); max-width:760px; margin:0 auto 18px; line-height:1.2;}
+  .buy .flame-glyph{margin:0 auto 26px; color:var(--flame);}
+  .ca-box{
+    max-width:600px; margin:38px auto 0;
+    display:flex; align-items:center; gap:0;
+    border:1px solid var(--gold-soft); background:var(--panel);
+  }
+  .ca-box code{
+    flex:1; padding:16px 20px; font-family:'JetBrains Mono', monospace;
+    font-size:0.88rem; color:var(--ink); text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .ca-box button{
+    background:var(--emerald); border:none; color:var(--parchment);
+    font-family:'JetBrains Mono', monospace; font-size:0.74rem; letter-spacing:0.1em;
+    text-transform:uppercase; padding:16px 22px; cursor:pointer;
+    transition:background 0.25s;
+  }
+  .ca-box button:hover{background:var(--emerald-2);}
+  .cta-row{display:flex; gap:16px; justify-content:center; margin-top:34px; flex-wrap:wrap;}
+  .btn{
+    font-family:'JetBrains Mono', monospace; font-size:0.78rem; letter-spacing:0.12em;
+    text-transform:uppercase; padding:15px 30px; text-decoration:none;
+    border:1px solid var(--gold-soft); color:var(--parchment); transition:all 0.25s;
+  }
+  .btn.primary{background:var(--emerald); border-color:var(--emerald);}
+  .btn.primary:hover{background:var(--emerald-2);}
+  .btn:not(.primary):hover{border-color:var(--flame); color:var(--flame);}
+  .launch-note{margin-top:20px; font-size:0.85rem; color:var(--ink-dim); font-style:italic;}
+
+  /* ---------- roadmap ---------- */
+  .roadmap{padding:120px 0; border-top:1px solid var(--line);}
+  .path{position:relative; margin-top:60px;}
+  .path::before{
+    content:""; position:absolute; left:14px; top:6px; bottom:6px; width:1px;
+    background:linear-gradient(180deg, var(--gold-soft), var(--flame-soft));
+  }
+  .path-step{position:relative; padding-left:52px; margin-bottom:52px;}
+  .path-step:last-child{margin-bottom:0;}
+  .path-step::before{
+    content:""; position:absolute; left:7px; top:4px; width:15px; height:15px;
+    border-radius:50%; background:var(--void); border:2px solid var(--flame);
+    box-shadow:0 0 12px rgba(94,235,143,0.5);
+  }
+  .path-step .phase-label{font-family:'JetBrains Mono', monospace; font-size:0.7rem; letter-spacing:0.2em; text-transform:uppercase; color:var(--gold); margin-bottom:8px;}
+  .path-step h3{font-size:1.35rem; color:var(--parchment); margin-bottom:10px;}
+  .path-step p{color:var(--ink); font-size:1.02rem; line-height:1.65; max-width:640px;}
+
+  /* ---------- footer ---------- */
+  footer{
+    padding:90px 0 50px;
+    background:linear-gradient(180deg, var(--panel), var(--void));
+    border-top:1px solid var(--line);
+    position:relative;
+  }
+  .footer-banner{
+    max-width:100%; border:1px solid var(--line); margin-bottom:60px; overflow:hidden;
+  }
+  .footer-banner img{width:100%; display:block; filter:saturate(1.05);}
+  .footer-grid{display:flex; justify-content:space-between; flex-wrap:wrap; gap:34px; align-items:flex-start;}
+  .footer-brand{font-family:'Cinzel', serif; font-size:1.1rem; letter-spacing:0.12em; color:var(--parchment); display:flex; align-items:center; gap:10px;}
+  .footer-links{display:flex; gap:26px; font-family:'JetBrains Mono', monospace; font-size:0.76rem; letter-spacing:0.1em; text-transform:uppercase;}
+  .footer-links a{text-decoration:none; color:var(--ink); transition:color 0.25s;}
+  .footer-links a:hover{color:var(--flame);}
+  .footer-fine{margin-top:50px; font-size:0.82rem; color:var(--ink-dim); line-height:1.6; max-width:720px;}
+  .disclaimer{
+    margin-top:26px; padding-top:26px; border-top:1px solid var(--line);
+    font-size:0.78rem; color:var(--ink-dim); line-height:1.6; max-width:820px;
+  }
+</style>
+</head>
+<body>
+
+<div id="warden-roam" aria-hidden="true">
+  <div id="warden-portrait">
+    <img src="assets/warden-candle-portrait.png" alt="">
+    <div class="wg-glow wg-eye-l"></div>
+    <div class="wg-glow wg-eye-r"></div>
+    <div class="wg-glow wg-candle"></div>
+    <div class="wg-ember" style="--drift:6px"></div>
+    <div class="wg-ember" style="--drift:-10px"></div>
+    <div class="wg-ember" style="--drift:4px"></div>
+    <div class="wg-ember" style="--drift:-6px"></div>
+    <div class="wg-ember" style="--drift:12px"></div>
+  </div>
+</div>
+
+<div id="candle-sig" aria-hidden="true">
+  <svg viewBox="0 0 40 100">
+    <rect x="14" y="40" width="12" height="55" fill="#1a2b20" stroke="#c9a227" stroke-width="0.6"/>
+    <clipPath id="flameclip"><rect id="flame-clip-rect" x="4" y="0" width="32" height="40"/></clipPath>
+    <g clip-path="url(#flameclip)">
+      <path d="M20 2 C 12 16, 10 24, 20 34 C 30 24, 28 16, 20 2 Z" fill="#5eeb8f" opacity="0.95"/>
+      <path d="M20 14 C 16 22, 16 26, 20 32 C 24 26, 24 22, 20 14 Z" fill="#eafff0" opacity="0.9"/>
+    </g>
+  </svg>
+</div>
+
+<nav>
+  <div class="brand">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M12 2C7 8 5 12 5 15a7 7 0 0014 0c0-3-2-7-7-13z" stroke="#5eeb8f" stroke-width="1.4"/></svg>
+    THE GREEN WARDEN
+  </div>
+  <div class="links">
+    <a href="#lore">Lore</a>
+    <a href="#world">World</a>
+    <a href="#guardians">Guardians</a>
+    <a href="#tokenomics">Tokenomics</a>
+    <a href="#roadmap">Path</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="hero-inner">
+    <h1>THE GREEN WARDEN<span>Guardian of the Holders</span></h1>
+    <p class="sub">They believed the Emerald Flame had faded. They were wrong.</p>
+    <p class="scrollcue">Scroll to read the legend ↓</p>
+  </div>
+</header>
+
+<!-- CHAPTER I -->
+<section class="band" id="lore">
+  <div class="wrap">
+
+    <div class="chapter">
+      <div class="ch-text">
+        <span class="ch-num">Chapter I — The Legend Begins</span>
+        <h2>He was not born.<br>He was chosen.</h2>
+        <p>Long after the last banners fell and the forest went quiet, the old stories said the Emerald Flame had gone out — that whatever had once guarded these lands was gone for good.</p>
+        <p>They were wrong.</p>
+        <p class="quote">The Green Warden has awakened. 🌿</p>
+      </div>
+      <div class="ch-media">
+        <img src="assets/warden-solo.png" alt="The Green Warden standing alone, wreathed in emerald flame, surrounded by the corrupted red bears">
+      </div>
+    </div>
+
+    <div class="chapter reverse">
+      <div class="ch-text">
+        <span class="ch-num">Chapter II — The Sacred Green Candle</span>
+        <h2>One flame refused to die.</h2>
+        <p>Long before kingdoms fell, long before the forest was silenced, there was a flame born from hope itself — the Sacred Green Candle.</p>
+        <p>It does not give power. It gives <em>purpose</em>. It does not choose the strongest. It chooses the <em>purest</em>. It burns once — but its light can last forever.</p>
+        <p class="quote">The flame remains. The Warden remains. The promise remains.</p>
+      </div>
+      <div class="ch-media">
+        <img src="assets/candle-poster.png" alt="The Sacred Green Candle, glowing before the Warden">
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="ch-text">
+        <span class="ch-num">Chapter III — The Corruption</span>
+        <h2>They were never born monsters.</h2>
+        <p class="tag-corrupt">Something changed them. Something turned their hearts crimson.</p>
+        <p>Where the red bears march, the ground remembers what they were before — allies, kin, guardians of the same forest, before the Crimson Curse took hold.</p>
+        <p>The Warden does not see enemies in them. He sees what was taken.</p>
+      </div>
+      <div class="ch-media">
+        <img src="assets/title-banner.png" alt="The Warden standing before the fallen red bears, banners raised">
+      </div>
+    </div>
+
+    <div class="chapter reverse">
+      <div class="ch-text">
+        <span class="ch-num">Chapter IV — The Warden's Oath</span>
+        <h2>Not chosen to destroy.</h2>
+        <p class="quote">"I was not chosen to destroy. I was chosen to remember. Every lost soul can still find the light."</p>
+        <p>This is the line that separates the Green Warden from every legend before him. He does not conquer the crimson horde. He <em>redeems</em> it.</p>
+      </div>
+      <div class="ch-media">
+        <img src="assets/warden-armored.png" alt="The Warden in emerald armor standing among the fallen">
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="ch-text">
+        <span class="ch-num">Chapter V — First Purification</span>
+        <h2>He does not kill. He heals.</h2>
+        <p>The Warden places his paw upon a red bear, and the crimson curse begins to lift — thread by thread, the green returns.</p>
+        <p class="quote">Every redeemed soul strengthens the Emerald Flame.</p>
+      </div>
+      <div class="ch-media">
+        <img src="assets/purification.png" alt="The Warden purifying a corrupted red bear, green light spreading between them">
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- WORLD BUILDING -->
+<section class="band band-dark" id="world">
+  <div class="wrap">
+    <div class="grid-head">
+      <span class="eyebrow">The World</span>
+      <h2>Pages from a forgotten book.</h2>
+      <p>Every Green Guardian was once Red. The Warden sees what others cannot — the light still buried beneath corruption. These are the fragments the forest still remembers.</p>
+    </div>
+    <div class="world-grid">
+      <div class="world-card">
+        <div class="glyph">🌲</div>
+        <h3>The Sacred Forest</h3>
+        <p>The last untouched ground where the Emerald Flame first burned — older than any kingdom that rose or fell around it.</p>
+      </div>
+      <div class="world-card">
+        <div class="glyph">🔥</div>
+        <h3>The First Flame</h3>
+        <p>Born from hope, not power. It chose the Warden once. The old prophecy says it will choose again.</p>
+      </div>
+      <div class="world-card">
+        <div class="glyph">🛡️</div>
+        <h3>Ancient Guardians</h3>
+        <p>Before the Warden, others carried the Flame. None are named anymore — only remembered in fragments and old paw-marks in stone.</p>
+      </div>
+      <div class="world-card">
+        <div class="glyph">🩸</div>
+        <h3>The Crimson Curse</h3>
+        <p>What turned kin into monsters. It does not kill — it hollows. The Warden is the only known cure.</p>
+      </div>
+      <div class="world-card">
+        <div class="glyph">🏛️</div>
+        <h3>Forgotten Temples</h3>
+        <p>Half-buried halls where the Order once kept its vigil. Some say the Crimson King's shadow was seen there last.</p>
+      </div>
+      <div class="world-card">
+        <div class="glyph">💎</div>
+        <h3>Emerald Relics</h3>
+        <p>Fragments of the First Flame, scattered long ago. Each one found is said to strengthen whoever carries it true.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- GUARDIANS / IDENTITY -->
+<section class="guardians" id="guardians">
+  <div class="wrap">
+    <div class="guardians-inner">
+      <span class="eyebrow">The Order</span>
+      <h2>The Warden cannot protect the Flame alone.</h2>
+      <p>Every legend needs Guardians. Not spectators — not holders in the ordinary sense. Those who carry the Flame become part of what it protects.</p>
+      <div class="titles-row">
+        <span class="title-pill">Guardian</span>
+        <span class="title-pill">Keeper</span>
+        <span class="title-pill">Flamebearer</span>
+      </div>
+      <p class="ask">If you found the Sacred Green Candle — would you protect it, or seek its power?</p>
+    </div>
+  </div>
+</section>
+
+<!-- VILLAIN TEASER -->
+<section class="villain">
+  <div class="wrap">
+    <span class="eyebrow">Something Stirs</span>
+    <div class="eyes"><span></span><span></span></div>
+    <h2>The Warden protects the Flame. But something has begun searching for it.</h2>
+    <p>No name yet. No shape. Only shadows, eyes, and a roar the forest hasn't heard in an age.</p>
+  </div>
+</section>
+
+<!-- PROPHECY -->
+<section class="prophecy">
+  <div class="wrap">
+    <span class="eyebrow" style="justify-content:center;">The Prophecy</span>
+    <p class="scroll-text">The ancient prophecy speaks of a day when the <span class="hl">Emerald Flame</span> chooses a new generation — not one Warden, but <span class="hl">many</span>. No one knows what that means. Not yet.</p>
+  </div>
+</section>
+
+<!-- TOKENOMICS -->
+<section class="band tokenomics" id="tokenomics">
+  <div class="wrap">
+    <span class="eyebrow">The Ledger</span>
+    <h2>What the legend costs to protect.</h2>
+    <p class="lede">A story is only as strong as the trust behind it. Every number below is visible on launch day — nothing hidden in the corruption.</p>
+
+    <div class="token-grid">
+      <div class="token-cell"><div class="k">Network</div><div class="v">Solana<small>SPL Token</small></div></div>
+      <div class="token-cell"><div class="k">Supply</div><div class="v">TBA<small>fixed at launch, no minting</small></div></div>
+      <div class="token-cell"><div class="k">Tax</div><div class="v">0%<small>no buy/sell tax</small></div></div>
+      <div class="token-cell"><div class="k">Liquidity</div><div class="v">Locked<small>burned or time-locked at launch</small></div></div>
+    </div>
+
+    <div class="transparency">
+      <div class="mark">🌿</div>
+      <p><strong>The Emerald Standard:</strong> team allocation, liquidity lock duration, and contract audit status will all be published here and pinned on our socials before the Sacred Candle is lit. If we can't show it, we won't ask you to trust it.</p>
+    </div>
+  </div>
+</section>
+
+<!-- BUY / CA -->
+<section class="buy" id="buy">
+  <div class="wrap">
+    <div class="flame-glyph">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M12 2C7 8 5 12 5 15a7 7 0 0014 0c0-3-2-7-7-13z" fill="#5eeb8f"/></svg>
+    </div>
+    <h2>The Sacred Green Candle has not yet chosen its Guardians.</h2>
+    <p style="color:var(--ink); font-style:italic; max-width:520px; margin:0 auto;">When it does, the contract address will appear here — and nowhere else claims to speak for it.</p>
+    <div class="ca-box">
+      <code id="ca-text">Contract address will be revealed at launch</code>
+      <button onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('ca-text').innerText)">Copy</button>
+    </div>
+    <div class="cta-row">
+      <a href="#" class="btn primary">Join the Order (Telegram)</a>
+      <a href="#" class="btn">Follow the Legend (X)</a>
+    </div>
+    <p class="launch-note">🌿 — that is the only warning you'll get.</p>
+  </div>
+</section>
+
+<!-- ROADMAP -->
+<section class="band roadmap" id="roadmap">
+  <div class="wrap">
+    <span class="eyebrow">The Warden's Path</span>
+    <h2 style="font-size:clamp(1.8rem,3.6vw,2.6rem); color:var(--parchment);">The story doesn't end at launch. It begins there.</h2>
+    <div class="path">
+      <div class="path-step">
+        <div class="phase-label">Phase I</div>
+        <h3>The Awakening</h3>
+        <p>The legend spreads with no mention of a token — only the story of the Warden, the Flame, and the fall of the red bears.</p>
+      </div>
+      <div class="path-step">
+        <div class="phase-label">Phase II</div>
+        <h3>The World Widens</h3>
+        <p>The Sacred Forest, the Crimson Curse, the Order of Guardians — the mythology deepens as followers start asking their own questions.</p>
+      </div>
+      <div class="path-step">
+        <div class="phase-label">Phase III</div>
+        <h3>The Guardians Rise</h3>
+        <p>Holders become Guardians, Keepers, and Flamebearers. The community stops watching the story and starts living inside it.</p>
+      </div>
+      <div class="path-step">
+        <div class="phase-label">Phase IV</div>
+        <h3>The Candle Is Lit</h3>
+        <p>Launch. Full tokenomics, liquidity lock, and contract address revealed in the open — the legend becomes something everyone holds together.</p>
+      </div>
+      <div class="path-step">
+        <div class="phase-label">Phase V</div>
+        <h3>The Legion Grows</h3>
+        <p>New chapters, artifacts, allies, and threats. Community milestones become events in the story — growth is the Flame burning brighter.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <div class="footer-banner">
+      <img src="assets/title-banner.png" alt="The Green Warden — Guardian of the Holders">
+    </div>
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <svg viewBox="0 0 24 24" fill="none" width="18" height="18"><path d="M12 2C7 8 5 12 5 15a7 7 0 0014 0c0-3-2-7-7-13z" stroke="#5eeb8f" stroke-width="1.4"/></svg>
+        THE GREEN WARDEN
+      </div>
+      <div class="footer-links">
+        <a href="#">X / Twitter</a>
+        <a href="#">Telegram</a>
+        <a href="#lore">The Lore</a>
+      </div>
+    </div>
+    <p class="footer-fine">One Legion. One Purpose. Green Forever.</p>
+    <p class="disclaimer">$GREENWARDEN is a community meme token on Solana built around original fictional lore. It has no intrinsic value or expectation of financial return, and carries the same risks as any early-stage meme asset — only participate with funds you can afford to lose, and always verify the contract address against our official, pinned social posts before transacting.</p>
+  </div>
+</footer>
+
+<script>
+  // Candle signature: flame height reflects scroll progress through the page
+  const rect = document.getElementById('flame-clip-rect');
+  function updateCandle(){
+    const scrollTop = window.scrollY;
+    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    const progress = docHeight > 0 ? Math.min(1, Math.max(0, scrollTop / docHeight)) : 0;
+    const maxH = 40;
+    const h = 6 + progress * (maxH - 6);
+    const y = 40 - h;
+    rect.setAttribute('y', y);
+    rect.setAttribute('height', h);
+  }
+
+  // Warden's aura: fades in once the reader leaves the hero, then stays as a living presence
+  const wardenRoam = document.getElementById('warden-roam');
+  function updateWarden(){
+    const scrollTop = window.scrollY;
+    wardenRoam.classList.toggle('is-visible', scrollTop > window.innerHeight * 0.5);
+  }
+
+  function onScroll(){
+    updateCandle();
+    updateWarden();
+  }
+  window.addEventListener('scroll', onScroll, {passive:true});
+  window.addEventListener('resize', onScroll);
+  onScroll();
+</script>
+
+</body>
+</html>
