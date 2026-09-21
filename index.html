@@ -59,12 +59,31 @@
   main{position:relative; z-index:2; flex:1; display:flex; align-items:center; justify-content:center; padding:56px 24px;}
   .gate{width:100%; max-width:470px; text-align:center;}
 
-  .candle{width:112px; height:180px; margin:0 auto 26px; display:block; overflow:visible;}
-  #flame{transform-origin:40px 68px; filter:drop-shadow(0 0 16px rgba(94,235,143,0.75)); animation:flame 3.2s ease-in-out infinite;}
-  @keyframes flame{
-    0%,100%{ transform:scale(1,1) rotate(0deg); }
-    30%{ transform:scale(1.05,1.09) rotate(-1.6deg); }
-    65%{ transform:scale(0.97,1.02) rotate(1.3deg); }
+  .candle{
+  width:150px;
+  height:180px;
+  margin:0 auto 26px;
+  display:block;
+  object-fit:contain;
+  filter:
+    drop-shadow(0 0 10px rgba(94,235,143,.65))
+    drop-shadow(0 0 28px rgba(94,235,143,.35));
+  animation:wardenGatePulse 2.8s ease-in-out infinite;
+  }
+  
+  @keyframes wardenGatePulse{
+    0%,100%{
+      transform:scale(1);
+      filter:
+        drop-shadow(0 0 10px rgba(94,235,143,.60))
+        drop-shadow(0 0 25px rgba(94,235,143,.30));
+    }
+    50%{
+      transform:scale(1.035);
+      filter:
+        drop-shadow(0 0 15px rgba(94,235,143,.85))
+        drop-shadow(0 0 35px rgba(94,235,143,.45));
+    }
   }
 
   h1{font-size:clamp(1.9rem,6vw,2.7rem); font-weight:900; line-height:1.1; margin-bottom:14px;}
@@ -120,16 +139,7 @@
 
 <main>
   <div class="gate">
-    <svg class="candle" viewBox="0 0 80 160" aria-hidden="true">
-      <ellipse cx="40" cy="150" rx="30" ry="6" fill="#0a1710" stroke="#c9a227" stroke-width="0.6"/>
-      <rect x="26" y="74" width="28" height="76" rx="2" fill="#1a2b20" stroke="#c9a227" stroke-width="0.7"/>
-      <path d="M26 82 Q 33 90 40 82 T 54 84" fill="none" stroke="#c9a227" stroke-width="0.5" opacity="0.5"/>
-      <line x1="40" y1="66" x2="40" y2="74" stroke="#79857c" stroke-width="1.4" stroke-linecap="round"/>
-      <g id="flame">
-        <path d="M40 6 C 26 32, 22 48, 40 68 C 58 48, 54 32, 40 6 Z" fill="#5eeb8f" opacity="0.95"/>
-        <path d="M40 32 C 33 46, 33 54, 40 65 C 47 54, 47 46, 40 32 Z" fill="#eafff0" opacity="0.92"/>
-      </g>
-    </svg>
+    <img class="candle" src="assets/TheGreenWarden.png" alt="The Green Warden">
 
     <h1>The Flame is waiting</h1>
     <p class="lede">Sign in to take the Warden's Oath, check in each day, and earn your place in the <em>Hall of Wardens</em>.</p>
