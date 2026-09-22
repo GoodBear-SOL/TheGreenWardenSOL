@@ -460,50 +460,62 @@ h1,h2,h3{
 }
 
 /* =========================================================
-   RANK PANEL + CHECK-IN PANEL
-   Two separate boxes side by side:
-   - left: Warden Awakening sword / rank
-   - right: check-in button, reward title, reminder, timer
+   CHECK-IN STRIP (compact, sits under stats)
    ========================================================= */
 
-.dash-grid{
-  display:grid;
-  grid-template-columns:280px 1fr;
-  gap:20px;
-  align-items:stretch;
-}
-
-.rank-card,
-.checkin-card{
-  border:1px solid var(--gold-soft);
-}
-
-.rank-card{
+.checkin-strip{
   display:flex;
   align-items:center;
-  justify-content:center;
-  padding:28px 16px;
+  gap:16px;
+  flex-wrap:wrap;
+  margin:0 0 20px;
+  padding:14px 18px;
+  border:1px solid var(--gold-soft);
   background:
-    radial-gradient(ellipse at 50% 30%,rgba(94,235,143,.10),transparent 60%),
+    radial-gradient(ellipse at 10% 50%,rgba(94,235,143,.08),transparent 60%),
     var(--panel);
 }
 
-.checkin-card{
-  display:flex;
-  flex-direction:column;
-  align-items:flex-start;
-  justify-content:center;
-  padding:32px 36px;
-  background:
-    radial-gradient(ellipse at 12% 50%,rgba(94,235,143,.08),transparent 55%),
-    var(--panel);
+.checkin-strip .ci-copy{
+  flex:1 1 260px;
+  min-width:0;
 }
 
-.checkin-card .btn{
-  margin-bottom:26px;
+.checkin-strip .ci-title{
+  font-size:1rem;
+  line-height:1.3;
+  margin-bottom:2px;
 }
 
-/* Check-in button glows softly while a reward is ready to claim */
+.checkin-strip .ci-sub{
+  color:var(--ink);
+  font-size:.92rem;
+  line-height:1.4;
+  max-width:none;
+  margin:0;
+}
+
+.checkin-strip .ci-sub:empty{
+  display:none;
+}
+
+.checkin-strip .ci-timer{
+  font-size:.86rem;
+  color:var(--ink);
+  white-space:nowrap;
+}
+
+.checkin-strip .ci-timer b{
+  font-family:'JetBrains Mono',monospace;
+  letter-spacing:.06em;
+  color:var(--parchment);
+}
+
+.checkin-strip .ci-timer.waiting,
+.checkin-strip .ci-timer.waiting b{
+  color:var(--gold);
+}
+
 #ci-btn:not([disabled]){
   animation:ciReady 2.2s ease-in-out infinite;
 }
@@ -518,43 +530,70 @@ h1,h2,h3{
   }
 }
 
-.ci-title{
-  font-size:1.7rem;
+@media(max-width:640px){
+  .checkin-strip{
+    flex-direction:column;
+    align-items:stretch;
+    text-align:center;
+  }
+
+  .checkin-strip .ci-timer{
+    white-space:normal;
+  }
+}
+
+/* =========================================================
+   RANK PANEL + TASKS PANEL
+   Two separate boxes side by side:
+   - left: Warden Awakening sword / rank
+   - right: social tasks (like / share) that award bonus WP
+   ========================================================= */
+
+.dash-grid{
+  display:grid;
+  grid-template-columns:280px 1fr;
+  gap:20px;
+  align-items:stretch;
+}
+
+.rank-card,
+.tasks-card{
+  border:1px solid var(--gold-soft);
+}
+
+.rank-card{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:28px 16px;
+  background:
+    radial-gradient(ellipse at 50% 30%,rgba(94,235,143,.10),transparent 60%),
+    var(--panel);
+}
+
+.tasks-card{
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  justify-content:flex-start;
+  padding:30px 32px;
+  background:
+    radial-gradient(ellipse at 12% 50%,rgba(94,235,143,.08),transparent 55%),
+    var(--panel);
+}
+
+.tasks-card .ci-title{
+  font-size:1.5rem;
   line-height:1.15;
   margin-bottom:8px;
 }
 
-.ci-sub{
+.tasks-card .ci-sub{
   color:var(--ink);
-  font-size:1.1rem;
-  line-height:1.55;
-  max-width:440px;
-  margin-bottom:16px;
-}
-
-.ci-sub:empty{
-  display:none;
-}
-
-/* Timer turns yellow while waiting for the next check-in to open */
-.ci-timer{
-  font-size:1.05rem;
-  color:var(--ink);
-}
-
-.ci-timer b{
-  font-family:'JetBrains Mono',monospace;
-  letter-spacing:.06em;
-  color:var(--parchment);
-}
-
-.ci-timer.waiting,
-.ci-timer.waiting b{
-  color:var(--gold);
-}
-
-.ci-timer.waiting b{
-  text-shadow:0 0 12px rgba(201,162,39,.45);
+  font-size:1.02rem;
+  line-height:1.5;
+  max-width:520px;
+  margin-bottom:20px;
 }
 
 @media(max-width:820px){
@@ -562,11 +601,107 @@ h1,h2,h3{
     grid-template-columns:1fr;
   }
 
-  .checkin-card{
-    align-items:center;
-    text-align:center;
-    padding:28px 20px;
+  .tasks-card{
+    padding:26px 20px;
   }
+}
+
+/* ---- individual task rows ---- */
+
+.task-list{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.task-row{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  flex-wrap:wrap;
+  border:1px solid var(--line);
+  background:rgba(5,13,9,.45);
+  padding:14px 16px;
+  transition:border-color .3s,background .3s;
+}
+
+.task-row.done{
+  border-color:var(--flame-soft);
+  background:rgba(31,107,66,.2);
+}
+
+.task-info{
+  min-width:0;
+  flex:1 1 160px;
+}
+
+.task-label{
+  font-size:1.05rem;
+  font-weight:600;
+  color:var(--parchment);
+  line-height:1.3;
+}
+
+.task-reward{
+  font-family:'JetBrains Mono',monospace;
+  font-size:.72rem;
+  letter-spacing:.08em;
+  color:var(--flame);
+  margin-top:2px;
+}
+
+.task-row.done .task-reward{
+  color:var(--ink-dim);
+}
+
+.task-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.task-proof{
+  width:100%;
+  margin-top:10px;
+}
+
+.task-proof input{
+  width:100%;
+  background:rgba(5,13,9,.7);
+  border:1px solid var(--gold-soft);
+  color:var(--parchment);
+  font-family:'JetBrains Mono',monospace;
+  font-size:.82rem;
+  padding:10px 12px;
+}
+
+.task-proof input:focus{
+  outline:none;
+  border-color:var(--flame);
+}
+
+.task-status{
+  width:100%;
+  font-family:'JetBrains Mono',monospace;
+  font-size:.72rem;
+  letter-spacing:.04em;
+  color:var(--ink-dim);
+  min-height:1.2em;
+}
+
+.task-status.ok{
+  color:var(--flame);
+}
+
+.task-status.bad{
+  color:#f0917f;
+}
+
+.tasks-note{
+  margin-top:16px;
+  color:var(--ink-dim);
+  font-size:.9rem;
+  line-height:1.5;
 }
 
 /* =========================================================
@@ -1749,7 +1884,42 @@ footer .disclaimer{
   </div>
 
   <!-- =======================================================
-       RANK PANEL + CHECK-IN PANEL (two separate boxes)
+       COMPACT CHECK-IN STRIP
+       ======================================================= -->
+
+  <div class="checkin-strip">
+
+    <button
+      class="btn primary small"
+      id="ci-btn"
+      type="button">
+      Check-in
+    </button>
+
+    <div class="ci-copy">
+
+      <h2
+        class="ci-title"
+        id="ci-title">
+        Day 1 reward: +5 WP
+      </h2>
+
+      <p
+        class="ci-sub"
+        id="ci-sub">
+      </p>
+
+    </div>
+
+    <div
+      class="ci-timer"
+      id="ci-timer">
+    </div>
+
+  </div>
+
+  <!-- =======================================================
+       RANK PANEL + TASKS PANEL (two separate boxes)
        ======================================================= -->
 
   <div class="dash-grid">
@@ -1816,31 +1986,27 @@ footer .disclaimer{
 
     </div>
 
-    <!-- Check-in panel -->
-    <div class="checkin-card">
+    <!-- Social tasks panel -->
+    <div class="tasks-card">
 
-      <button
-        class="btn primary"
-        id="ci-btn"
-        type="button">
-        Check-in
-      </button>
-
-      <h2
-        class="ci-title"
-        id="ci-title">
-        Day 1 reward: +5 WP
+      <h2 class="ci-title">
+        Warden Tasks
       </h2>
 
-      <p
-        class="ci-sub"
-        id="ci-sub">
+      <p class="ci-sub">
+        Open each link on X, do the action, then come back and claim.
+        Each task can only be claimed once per account.
       </p>
 
       <div
-        class="ci-timer"
-        id="ci-timer">
+        class="task-list"
+        id="task-list">
       </div>
+
+      <p class="tasks-note">
+        Claims are self-reported and reviewed periodically.
+        Accounts found gaming tasks may have WP reversed.
+      </p>
 
     </div>
 
@@ -3006,6 +3172,9 @@ footer .disclaimer{
   let profileFilled =
     false;
 
+  const openedTasks =
+    new Set();
+
   const email =
     (
       session.user &&
@@ -3120,6 +3289,7 @@ footer .disclaimer{
     renderTop();
     renderHome();
     renderSwordProgress();
+    renderTasks();
     renderProfile();
 
   }
@@ -3518,10 +3688,10 @@ footer .disclaimer{
 
   /* ---------- check-in ---------- */
 
-  function floatPoints(n){
+  function floatPoints(n,fromEl){
 
     const btn =
-      $('#ci-btn')
+      (fromEl || $('#ci-btn'))
         .getBoundingClientRect();
 
     const f =
@@ -3650,6 +3820,402 @@ footer .disclaimer{
 
       }
     );
+
+  /* ---------- social tasks ---------- */
+
+  /*
+    Fallback task list, used only if the server hasn't been
+    upgraded yet to return `S.tasks` from get_my_status().
+    Once you run supabase/x-tasks-setup.sql, the server list
+    (with real ids and WP amounts) takes over automatically.
+  */
+  const FALLBACK_TASKS = [
+    {
+      id:'like-launch-post',
+      label:'Like the post',
+      url:'https://x.com/ThegoodbearSOL',
+      wp_reward:50,
+      needs_proof:false
+    },
+    {
+      id:'share-launch-post',
+      label:'Share the post',
+      url:'https://x.com/ThegoodbearSOL',
+      wp_reward:50,
+      needs_proof:true
+    }
+  ];
+
+  function renderTasks(){
+
+    const list =
+      $('#task-list');
+
+    if(!list){
+      return;
+    }
+
+    const tasks =
+      (S.tasks && S.tasks.length)
+        ? S.tasks
+        : FALLBACK_TASKS;
+
+    const claims =
+      new Map(
+        (S.task_claims || [])
+          .map(c => [c.task_id, c])
+      );
+
+    list.replaceChildren();
+
+    tasks.forEach(task => {
+
+      const claim =
+        claims.get(task.id);
+
+      const isDone =
+        !!claim;
+
+      const row =
+        el(
+          'div',
+          {
+            class:
+              'task-row' +
+              (isDone ? ' done' : ''),
+            'data-task-row':task.id
+          }
+        );
+
+      const info =
+        el(
+          'div',
+          {
+            class:'task-info'
+          },
+
+          el(
+            'div',
+            {
+              class:'task-label',
+              text:task.label
+            }
+          ),
+
+          el(
+            'div',
+            {
+              class:'task-reward',
+              text:
+                isDone
+                  ? '✓ Claimed · +' + fmt(task.wp_reward) + ' WP'
+                  : '+' + fmt(task.wp_reward) + ' WP'
+            }
+          )
+        );
+
+      const openLink =
+        el(
+          'a',
+          {
+            class:'btn small',
+            href:task.url,
+            target:'_blank',
+            rel:'noopener noreferrer',
+            'data-open-task':task.id,
+            text:'Open on X'
+          }
+        );
+
+      const claimBtn =
+        el(
+          'button',
+          {
+            class:'btn small primary',
+            type:'button',
+            'data-claim-task':task.id,
+            text:
+              isDone
+                ? 'Claimed'
+                : 'I did it — Claim'
+          }
+        );
+
+      if(
+        isDone ||
+        !openedTasks.has(task.id)
+      ){
+        claimBtn.disabled = true;
+      }
+
+      const actions =
+        el(
+          'div',
+          {
+            class:'task-actions'
+          },
+          openLink,
+          claimBtn
+        );
+
+      row.append(info,actions);
+
+      if(
+        task.needs_proof &&
+        !isDone
+      ){
+
+        const proofWrap =
+          el(
+            'div',
+            {
+              class:'task-proof'
+            }
+          );
+
+        const proofInput =
+          el(
+            'input',
+            {
+              type:'url',
+              placeholder:'Paste the link to your reply/retweet (optional but helps verification)',
+              'data-proof-input':task.id
+            }
+          );
+
+        proofWrap.append(proofInput);
+
+        row.append(proofWrap);
+
+      }
+
+      const status =
+        el(
+          'div',
+          {
+            class:'task-status',
+            'data-task-status':task.id
+          },
+
+          isDone
+            ? ('Claimed ' +
+                (
+                  claim.claimed_at
+                    ? new Date(claim.claimed_at).toLocaleDateString()
+                    : ''
+                ))
+            : (
+                openedTasks.has(task.id)
+                  ? 'Opened — come back and claim once you\'ve done it.'
+                  : 'Open the link first, then claim.'
+              )
+        );
+
+      row.append(status);
+
+      list.append(row);
+
+    });
+
+  }
+
+  $('#task-list')
+    .addEventListener(
+      'click',
+      function(e){
+
+        const openLink =
+          e.target.closest('[data-open-task]');
+
+        if(openLink){
+
+          const id =
+            openLink.dataset.openTask;
+
+          openedTasks.add(id);
+
+          const claimBtn =
+            $(
+              '[data-claim-task="' +
+              id +
+              '"]',
+              this
+            );
+
+          if(claimBtn){
+            claimBtn.disabled = false;
+          }
+
+          const status =
+            $(
+              '[data-task-status="' +
+              id +
+              '"]',
+              this
+            );
+
+          if(status){
+
+            status.textContent =
+              'Opened — come back and claim once you\'ve done it.';
+
+          }
+
+          return;
+        }
+
+        const claimBtn =
+          e.target.closest('[data-claim-task]');
+
+        if(claimBtn){
+          claimTask(
+            claimBtn.dataset.claimTask,
+            claimBtn
+          );
+        }
+
+      }
+    );
+
+  async function claimTask(taskId,btnEl){
+
+    const status =
+      $('[data-task-status="' + taskId + '"]');
+
+    const proofInput =
+      $('[data-proof-input="' + taskId + '"]');
+
+    const proofUrl =
+      proofInput
+        ? proofInput.value.trim()
+        : '';
+
+    btnEl.disabled =
+      true;
+
+    const originalText =
+      btnEl.textContent;
+
+    btnEl.textContent =
+      'Claiming…';
+
+    if(status){
+
+      status.className =
+        'task-status';
+
+      status.textContent =
+        'Checking…';
+
+    }
+
+    try{
+
+      const {
+        data,
+        error
+      } =
+        await sb.rpc(
+          'claim_task',
+          {
+            p_task_id:taskId,
+            p_proof_url:proofUrl || null
+          }
+        );
+
+      if(error){
+        throw error;
+      }
+
+      if(!data.ok){
+
+        const reasons = {
+
+          ALREADY_CLAIMED:
+            'You already claimed this task.',
+
+          UNKNOWN_TASK:
+            'This task is no longer available.',
+
+          TASK_INACTIVE:
+            'This task isn\'t active right now.'
+
+        };
+
+        if(status){
+
+          status.className =
+            'task-status bad';
+
+          status.textContent =
+            reasons[data.error] ||
+            'Couldn\'t claim this task. Try again.';
+
+        }
+
+        toast(
+          reasons[data.error] ||
+          'Couldn\'t claim this task.',
+          true
+        );
+
+        btnEl.textContent =
+          originalText;
+
+        btnEl.disabled =
+          data.error === 'ALREADY_CLAIMED';
+
+      }else{
+
+        floatPoints(
+          data.wp_awarded,
+          btnEl
+        );
+
+        toast(
+          '+' +
+          data.wp_awarded +
+          ' WP — task claimed!'
+        );
+
+        lbLoaded =
+          false;
+
+        await loadStatus();
+
+      }
+
+    }catch(e){
+
+      console.error(
+        'Task claim error:',
+        e
+      );
+
+      if(status){
+
+        status.className =
+          'task-status bad';
+
+        status.textContent =
+          'Claim didn\'t go through. Try again.';
+
+      }
+
+      toast(
+        'Claim didn\'t go through. Please try again.',
+        true
+      );
+
+      btnEl.textContent =
+        originalText;
+
+      btnEl.disabled =
+        false;
+
+    }
+
+  }
 
   /* ---------- leaderboard ---------- */
 
