@@ -1952,10 +1952,212 @@ footer .disclaimer{
     margin-top:-110px;
   }
 }
+
+
+/* =========================================================
+   GREEN WARDEN // AURORA HUD REDESIGN
+   Visual layer only — existing Supabase/JS hooks are preserved.
+   ========================================================= */
+:root{
+  --gw-bg:#020806;
+  --gw-panel:rgba(6,18,12,.72);
+  --gw-panel-solid:#07140d;
+  --gw-edge:rgba(82,219,132,.20);
+  --gw-edge-hot:rgba(111,255,161,.48);
+  --gw-glow:rgba(58,224,118,.22);
+  --gw-text:#eef8ef;
+  --gw-muted:#8fa597;
+  --gw-gold:#d8bd62;
+}
+
+html{background:var(--gw-bg)}
+body{
+  background:
+    radial-gradient(900px 500px at 12% 5%,rgba(28,156,82,.20),transparent 60%),
+    radial-gradient(850px 500px at 88% 14%,rgba(45,111,77,.15),transparent 62%),
+    radial-gradient(900px 700px at 52% 95%,rgba(10,92,53,.16),transparent 62%),
+    linear-gradient(180deg,#020806 0%,#04100a 45%,#020806 100%);
+}
+
+body::before{
+  content:"";
+  position:fixed;
+  inset:-25%;
+  z-index:0;
+  pointer-events:none;
+  opacity:.7;
+  background:
+    radial-gradient(circle at 20% 35%,rgba(74,255,139,.12) 0 1px,transparent 2px),
+    radial-gradient(circle at 75% 65%,rgba(202,235,196,.10) 0 1px,transparent 2px),
+    radial-gradient(circle at 40% 80%,rgba(74,255,139,.08) 0 1px,transparent 2px);
+  background-size:180px 180px,240px 240px,310px 310px;
+  animation:gwStarDrift 28s linear infinite;
+}
+
+body::after{
+  opacity:.055;
+  mix-blend-mode:screen;
+}
+
+@keyframes gwStarDrift{
+  from{transform:translate3d(0,0,0) rotate(0deg)}
+  to{transform:translate3d(70px,-55px,0) rotate(3deg)}
+}
+
+/* floating ambient light */
+.gw-ambient{
+  position:fixed;
+  inset:0;
+  z-index:0;
+  pointer-events:none;
+  overflow:hidden;
+}
+.gw-ambient::before,.gw-ambient::after{
+  content:"";
+  position:absolute;
+  width:42vw;
+  height:42vw;
+  min-width:320px;
+  min-height:320px;
+  border-radius:50%;
+  filter:blur(70px);
+  opacity:.18;
+  background:rgba(42,219,112,.20);
+  animation:gwFloat 16s ease-in-out infinite alternate;
+}
+.gw-ambient::before{left:-12vw;top:18vh}
+.gw-ambient::after{right:-14vw;bottom:5vh;animation-delay:-7s;animation-duration:20s}
+@keyframes gwFloat{
+  0%{transform:translate3d(0,0,0) scale(.92)}
+  100%{transform:translate3d(55px,-35px,0) scale(1.08)}
+}
+.gw-orb{position:absolute;border:1px solid rgba(102,245,149,.18);border-radius:50%;box-shadow:0 0 50px rgba(63,231,121,.10) inset;animation:gwOrb 13s ease-in-out infinite}
+.gw-orb.a{width:190px;height:190px;right:9%;top:19%;animation-delay:-3s}
+.gw-orb.b{width:95px;height:95px;left:7%;top:48%;animation-delay:-8s}
+.gw-orb.c{width:280px;height:280px;right:28%;bottom:-170px;animation-duration:18s}
+@keyframes gwOrb{50%{transform:translateY(-18px) rotate(8deg);opacity:.75}100%{transform:translateY(14px) rotate(-6deg);opacity:.45}}
+
+.head,.wrap,footer,.admin-profile-overlay,#toast{position:relative;z-index:2}
+.head{
+  background:rgba(2,9,6,.72);
+  border-bottom:1px solid rgba(102,236,145,.15);
+  box-shadow:0 10px 45px rgba(0,0,0,.28);
+  backdrop-filter:blur(18px) saturate(130%);
+  -webkit-backdrop-filter:blur(18px) saturate(130%);
+}
+.topbar{max-width:1180px;padding:15px 22px}
+.brand{font-size:.82rem;letter-spacing:.20em;text-shadow:0 0 20px rgba(96,255,143,.18)}
+.brand .brand-warden{width:34px;height:34px}
+.wp-pill{
+  border:1px solid rgba(91,236,137,.22);
+  background:rgba(13,42,25,.58);
+  box-shadow:0 0 24px rgba(49,206,105,.08) inset;
+  padding:9px 13px;
+  border-radius:999px;
+}
+.tabs{max-width:1180px;margin:auto;padding:0 16px 10px;gap:6px}
+.tab-btn{
+  border:1px solid transparent;
+  border-radius:10px;
+  padding:9px 14px;
+  transition:.22s ease;
+}
+.tab-btn:hover{background:rgba(70,209,116,.07);border-color:rgba(70,209,116,.12);transform:translateY(-1px)}
+.tab-btn[aria-selected="true"]{background:rgba(56,205,107,.11);border-color:rgba(89,236,137,.22);box-shadow:0 0 22px rgba(60,220,112,.08) inset}
+.wrap{max-width:1180px;padding:42px 22px 80px}
+
+/* glass cards */
+.stats,.checkin-strip,.rank-card,.tasks-card,.chapter,.lb,.admin-review,.admin-profile-card{
+  background:linear-gradient(145deg,rgba(8,25,16,.78),rgba(3,12,8,.66));
+  border:1px solid var(--gw-edge);
+  box-shadow:0 24px 70px rgba(0,0,0,.26),0 0 50px rgba(39,209,105,.035) inset;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.stats{border-radius:20px;overflow:hidden}
+.stat{position:relative;overflow:hidden;transition:transform .25s ease,border-color .25s ease}
+.stat::before{content:"";position:absolute;inset:-50%;background:radial-gradient(circle at 50% 0,rgba(87,240,137,.10),transparent 48%);opacity:0;transition:.25s}
+.stat:hover{transform:translateY(-3px);border-color:rgba(102,245,149,.25)}
+.stat:hover::before{opacity:1}
+.checkin-strip{border-radius:18px}
+.rank-card,.tasks-card{border-radius:22px;position:relative;overflow:hidden}
+.rank-card::before,.tasks-card::before,.admin-review::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(115deg,transparent 0 38%,rgba(101,245,148,.035) 50%,transparent 62%);
+  transform:translateX(-100%);animation:gwSheen 9s ease-in-out infinite;
+}
+@keyframes gwSheen{0%,55%{transform:translateX(-100%)}75%,100%{transform:translateX(100%)}}
+.task-list{gap:12px}
+.task-item,.task-card,.task{transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.task-item:hover,.task-card:hover,.task:hover{transform:translateY(-2px);box-shadow:0 12px 35px rgba(0,0,0,.24),0 0 28px rgba(70,230,119,.06);border-color:rgba(96,245,142,.25)}
+
+/* HUD heading */
+.page-title{font-size:clamp(2rem,4vw,3.35rem);text-shadow:0 0 36px rgba(84,239,135,.12)}
+.page-sub{max-width:680px;color:#91a99b}
+.eyebrow{color:#75e99b;letter-spacing:.34em}
+
+/* Admin workspace */
+body.admin-mode .wrap{padding-top:28px}
+body.admin-mode .admin-mode-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  margin:0 0 14px;
+  padding:8px 12px;
+  border-radius:999px;
+  border:1px solid rgba(101,245,148,.24);
+  background:rgba(31,107,66,.16);
+  box-shadow:0 0 24px rgba(65,224,117,.08);
+}
+body.admin-mode .admin-review{margin-top:0;border-radius:24px;position:relative;overflow:hidden}
+.admin-review-head{padding-bottom:5px}
+.admin-review-title{font-size:clamp(1.5rem,3vw,2.15rem);letter-spacing:.06em}
+.admin-review-card{border-radius:16px;background:rgba(3,13,8,.56);border-color:rgba(84,224,127,.16);transition:.2s}
+.admin-review-card:hover{border-color:rgba(84,239,135,.36);box-shadow:0 12px 40px rgba(0,0,0,.25),0 0 30px rgba(70,230,119,.06)}
+.admin-review-actions .btn{border-radius:9px}
+
+/* Leaderboard */
+.lb-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:20px}
+.lb{border-radius:22px;overflow:hidden}
+.lb-row{position:relative;min-height:72px;padding:13px 16px;transition:.22s ease;border-bottom:1px solid rgba(100,230,145,.08)}
+.lb-row:hover{background:rgba(59,218,111,.055);transform:translateX(3px)}
+.lb-row.p1{background:linear-gradient(90deg,rgba(215,189,98,.10),transparent)}
+.lb-row.p2{background:linear-gradient(90deg,rgba(150,170,160,.06),transparent)}
+.lb-row.p3{background:linear-gradient(90deg,rgba(151,91,49,.07),transparent)}
+.admin-lb-name{color:#e8f7eb;text-decoration:none;text-shadow:0 0 16px rgba(85,239,135,.06)}
+.admin-lb-name:hover{color:#7bf1a1;text-shadow:0 0 20px rgba(85,239,135,.3)}
+
+.admin-profile-overlay{background:rgba(1,7,4,.76);backdrop-filter:blur(14px)}
+.admin-profile-card{border-radius:24px;box-shadow:0 30px 100px rgba(0,0,0,.5),0 0 60px rgba(51,220,111,.08)}
+
+/* Buttons */
+.btn{border-radius:10px;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease}
+.btn:hover{transform:translateY(-1px);box-shadow:0 8px 26px rgba(0,0,0,.22),0 0 18px rgba(68,226,116,.08)}
+.btn.primary{box-shadow:0 0 22px rgba(66,225,115,.12)}
+
+/* mobile */
+@media(max-width:700px){
+  .wrap{padding:28px 14px 60px}
+  .topbar{padding:12px 14px}
+  .brand{letter-spacing:.12em;font-size:.72rem}
+  .tabs{overflow-x:auto;justify-content:flex-start;padding-inline:10px}
+  .tab-btn{white-space:nowrap}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .lb-head{align-items:flex-start}
+  .gw-orb.a{right:-80px}.gw-orb.b{left:-40px}
+}
+
 </style>
 </head>
 
 <body>
+
+<!-- Ambient Green Warden motion layer -->
+<div class="gw-ambient" aria-hidden="true">
+  <span class="gw-orb a"></span>
+  <span class="gw-orb b"></span>
+  <span class="gw-orb c"></span>
+</div>
 
 <!-- =========================================================
      BOOT / AWAKENING
@@ -2090,7 +2292,8 @@ footer .disclaimer{
     hidden>
 
     <span>
-      Pick a Warden name.
+      You're showing as your Google name.
+      Pick a Warden name for the leaderboard.
     </span>
 
     <button
@@ -2272,6 +2475,7 @@ footer .disclaimer{
 
       <p class="ci-sub">
         Complete each task on X, then submit your proof link for manual review.
+        WP is awarded only after your submission has been verified and approved.
       </p>
 
       <div
@@ -2280,7 +2484,8 @@ footer .disclaimer{
       </div>
 
       <p class="tasks-note">
-        Social tasks require proof and manual verification. WP is awarded only after your proof is approved.
+        Social tasks require proof and manual verification. Opening the X link does not submit a claim and does not award WP.
+        WP is awarded only after your proof is approved.
       </p>
 
     </div>
@@ -2873,7 +3078,7 @@ footer .disclaimer{
         </div>
 
         <p class="hint">
-          It shows next to your name on the leaderboard.
+          Optional. It shows next to your name on the leaderboard.
           Adding it for the first time earns +5 WP.
         </p>
 
@@ -2892,11 +3097,13 @@ footer .disclaimer{
           autocomplete="off"
           autocapitalize="off"
           spellcheck="false"
-          placeholder="Enter your Solana address">
+          placeholder="Enter your Solana public address">
 
         <p class="hint">
-          <strong> Never enter a seed phrase or private key.</strong>.
-          No wallet connection is required. Saving an address for the first time earns +5 WP.
+          Optional. Enter your Solana <strong>public address only</strong>.
+          Never enter a seed phrase or private key.
+          This is a manual entry field — no wallet connection is required.
+          Saving an address for the first time earns +5 WP.
         </p>
 
       </div>
@@ -4345,7 +4552,7 @@ footer .disclaimer{
 
     if(status === 'pending'){
 
-      return 'Pending manual review';
+      return 'Pending manual review — WP has not been awarded yet.';
     }
 
     if(status === 'rejected'){
@@ -4353,7 +4560,7 @@ footer .disclaimer{
       return 'Rejected — check your proof and resubmit.';
     }
 
-    return 'For manual review.';
+    return 'Complete the task, paste your X proof link, then submit for manual review.';
   }
 
   function renderTasks(){
@@ -4505,7 +4712,7 @@ footer .disclaimer{
             {
               type:'url',
               placeholder:
-                'Paste the public X link',
+                'Paste the public X link to your reply or quote post',
               value:
                 claim && claim.proof_url
                   ? claim.proof_url
@@ -4630,7 +4837,7 @@ footer .disclaimer{
               'task-status bad';
 
             status.textContent =
-              'Enter a valid public X or Twitter URL.';
+              'Please enter a valid public X or Twitter URL.';
           }
         }
       }
@@ -4657,11 +4864,11 @@ footer .disclaimer{
           'task-status bad';
 
         status.textContent =
-          'Paste a valid public X or Twitter proof link.';
+          'Please paste a valid public X or Twitter proof link.';
       }
 
       toast(
-        'Paste your X proof link',
+        'Please paste your X proof link before submitting.',
         true
       );
 
@@ -4721,7 +4928,7 @@ footer .disclaimer{
             'Please provide a valid proof URL.',
 
           INVALID_X_PROOF_URL:
-            'Provide a public X or Twitter proof URL.',
+            'Please provide a public X or Twitter proof URL.',
 
           UNKNOWN_TASK:
             'This task is no longer available.',
@@ -5903,7 +6110,7 @@ footer .disclaimer{
         ){
 
           return setMsg(
-            'That does not look like a valid Solana address.',
+            'That does not look like a valid Solana public address.',
             'bad'
           );
 
@@ -5951,7 +6158,7 @@ footer .disclaimer{
                 'That X username doesn\'t look right.',
 
               INVALID_WALLET:
-                'That does not look like a valid Solana address.'
+                'That does not look like a valid Solana public address.'
 
             };
 
