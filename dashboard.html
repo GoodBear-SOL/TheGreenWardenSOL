@@ -710,6 +710,145 @@ h1,h2,h3{
 }
 
 /* =========================================================
+   ADMIN REVIEW
+   ========================================================= */
+
+.admin-review{
+  display:none;
+  margin-top:28px;
+  border:1px solid var(--gold-soft);
+  background:
+    radial-gradient(ellipse at 12% 20%,rgba(94,235,143,.08),transparent 55%),
+    var(--panel);
+  padding:30px 32px;
+}
+
+.admin-review.visible{
+  display:block;
+}
+
+.admin-review-head{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:16px;
+  flex-wrap:wrap;
+  margin-bottom:20px;
+}
+
+.admin-review-title{
+  margin:0;
+  font-family:'Cinzel',serif;
+  color:var(--parchment);
+  font-size:1.45rem;
+}
+
+.admin-review-sub{
+  margin:6px 0 0;
+  color:var(--ink-dim);
+  font-size:.9rem;
+  line-height:1.5;
+}
+
+.admin-review-count{
+  font-family:'JetBrains Mono',monospace;
+  font-size:.75rem;
+  letter-spacing:.08em;
+  color:var(--flame);
+}
+
+.admin-review-list{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.admin-review-card{
+  border:1px solid var(--line);
+  background:rgba(5,13,9,.45);
+  padding:16px;
+}
+
+.admin-review-user{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.admin-review-name{
+  font-weight:700;
+  color:var(--parchment);
+}
+
+.admin-review-handle{
+  font-family:'JetBrains Mono',monospace;
+  font-size:.72rem;
+  color:var(--ink-dim);
+  margin-top:3px;
+}
+
+.admin-review-task{
+  margin-top:13px;
+  color:var(--parchment);
+  font-weight:600;
+}
+
+.admin-review-reward{
+  margin-top:3px;
+  color:var(--flame);
+  font-family:'JetBrains Mono',monospace;
+  font-size:.72rem;
+}
+
+.admin-review-meta{
+  margin-top:10px;
+  color:var(--ink-dim);
+  font-family:'JetBrains Mono',monospace;
+  font-size:.68rem;
+}
+
+.admin-review-proof{
+  margin-top:12px;
+  word-break:break-all;
+}
+
+.admin-review-proof a{
+  color:var(--ink);
+  text-decoration:none;
+}
+
+.admin-review-proof a:hover{
+  color:var(--flame);
+}
+
+.admin-review-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:14px;
+}
+
+.admin-review-empty{
+  border:1px dashed var(--gold-soft);
+  padding:28px 20px;
+  text-align:center;
+  color:var(--ink-dim);
+}
+
+.admin-review-error{
+  color:#f0917f;
+  font-size:.88rem;
+}
+
+@media(max-width:820px){
+  .admin-review{
+    padding:26px 20px;
+  }
+}
+
+/* =========================================================
    WARDEN AWAKENING SWORD
    Stable / stationary version
    ========================================================= */
@@ -2017,6 +2156,54 @@ footer .disclaimer{
 
   </div>
 
+  <!-- =======================================================
+       ADMIN REVIEW PANEL
+       Visible only to authorized Green Warden admins.
+       ======================================================= -->
+
+  <section
+    class="admin-review"
+    id="admin-review"
+    aria-labelledby="admin-review-title">
+
+    <div class="admin-review-head">
+
+      <div>
+        <h2
+          class="admin-review-title"
+          id="admin-review-title">
+          Warden Admin Review
+        </h2>
+
+        <p class="admin-review-sub">
+          Check submitted X proof before awarding WP. Approval and rejection are handled securely by Supabase.
+        </p>
+      </div>
+
+      <div>
+        <div
+          class="admin-review-count"
+          id="admin-review-count">
+          0 pending
+        </div>
+
+        <button
+          class="btn small"
+          id="admin-review-refresh"
+          type="button">
+          Refresh
+        </button>
+      </div>
+
+    </div>
+
+    <div
+      class="admin-review-list"
+      id="admin-review-list">
+    </div>
+
+  </section>
+
   <div class="cal-head">
 
     <h2>
@@ -3180,6 +3367,10 @@ footer .disclaimer{
   const openedTasks =
     new Set();
 
+  let adminReviews = [];
+
+  let adminRefreshBusy = false;
+
   const email =
     (
       session.user &&
@@ -3290,6 +3481,12 @@ footer .disclaimer{
       Date.now();
 
     renderAll();
+
+    /*
+      Admin review is loaded separately. Non-admin users receive
+      ADMIN_REQUIRED and simply keep this panel hidden.
+    */
+    await loadAdminReviews();
   }
 
   /* ---------- tabs ---------- */
@@ -4449,6 +4646,455 @@ footer .disclaimer{
     }
 
   }
+
+  /* ---------- admin review ---------- */
+
+  function formatReviewDate(value){
+
+    if(!value){
+      return 'Unknown time';
+    }
+
+    const d = new Date(value);
+
+    if(Number.isNaN(d.getTime())){
+      return String(value);
+    }
+
+    return d.toLocaleString();
+  }
+
+  function showAdminReviewPanel(show){
+
+    const panel =
+      $('#admin-review');
+
+    if(!panel){
+      return;
+    }
+
+    panel.classList.toggle(
+      'visible',
+      !!show
+    );
+  }
+
+  function renderAdminReviews(){
+
+    const list =
+      $('#admin-review-list');
+
+    const count =
+      $('#admin-review-count');
+
+    if(!list || !count){
+      return;
+    }
+
+    const claims =
+      Array.isArray(adminReviews)
+        ? adminReviews
+        : [];
+
+    count.textContent =
+      claims.length +
+      (claims.length === 1 ? ' pending' : ' pending');
+
+    list.replaceChildren();
+
+    if(!claims.length){
+
+      list.append(
+        el(
+          'div',
+          {
+            class:'admin-review-empty',
+            text:'No pending submissions. You are all caught up.'
+          }
+        )
+      );
+
+      return;
+    }
+
+    claims.forEach(claim => {
+
+      const displayName =
+        claim.google_name ||
+        claim.username ||
+        'Warden';
+
+      const greenHandle =
+        claim.username
+          ? '@' + String(claim.username).replace(/^@/,'')
+          : '';
+
+      const xHandle =
+        claim.x_username
+          ? 'X: @' + String(claim.x_username).replace(/^@/,'')
+          : '';
+
+      const userMeta =
+        [greenHandle, xHandle]
+          .filter(Boolean)
+          .join(' · ');
+
+      const card =
+        el(
+          'article',
+          {
+            class:'admin-review-card',
+            'data-admin-claim-user':claim.user_id,
+            'data-admin-claim-task':claim.task_id
+          }
+        );
+
+      card.append(
+        el(
+          'div',
+          {
+            class:'admin-review-user'
+          },
+          el(
+            'div',
+            {},
+            el(
+              'div',
+              {
+                class:'admin-review-name',
+                text:displayName
+              }
+            ),
+            el(
+              'div',
+              {
+                class:'admin-review-handle',
+                text:userMeta || 'No username provided'
+              }
+            )
+          )
+        ),
+
+        el(
+          'div',
+          {
+            class:'admin-review-task',
+            text:claim.task_label || claim.task_id || 'Task'
+          }
+        ),
+
+        el(
+          'div',
+          {
+            class:'admin-review-reward',
+            text:'+' + fmt(claim.wp_reward || 0) + ' WP after approval'
+          }
+        ),
+
+        el(
+          'div',
+          {
+            class:'admin-review-meta',
+            text:'Submitted: ' + formatReviewDate(claim.claimed_at)
+          }
+        )
+      );
+
+      if(claim.proof_url){
+
+        const proofLink =
+          el(
+            'a',
+            {
+              href:claim.proof_url,
+              target:'_blank',
+              rel:'noopener noreferrer',
+              text:'Open submitted X proof ↗'
+            }
+          );
+
+        card.append(
+          el(
+            'div',
+            {
+              class:'admin-review-proof'
+            },
+            proofLink
+          )
+        );
+      }
+
+      const approveBtn =
+        el(
+          'button',
+          {
+            class:'btn small primary',
+            type:'button',
+            'data-admin-approve':claim.task_id,
+            'data-admin-user':claim.user_id,
+            text:'✓ Approve'
+          }
+        );
+
+      const rejectBtn =
+        el(
+          'button',
+          {
+            class:'btn small',
+            type:'button',
+            'data-admin-reject':claim.task_id,
+            'data-admin-user':claim.user_id,
+            text:'✕ Reject'
+          }
+        );
+
+      card.append(
+        el(
+          'div',
+          {
+            class:'admin-review-actions'
+          },
+          approveBtn,
+          rejectBtn
+        )
+      );
+
+      list.append(card);
+    });
+  }
+
+  async function loadAdminReviews(){
+
+    try{
+
+      const {
+        data,
+        error
+      } =
+        await sb.rpc(
+          'get_admin_task_reviews'
+        );
+
+      if(error){
+        throw error;
+      }
+
+      if(!data || !data.ok){
+        throw new Error(
+          (data && data.error) ||
+          'ADMIN_REQUIRED'
+        );
+      }
+
+      adminReviews =
+        Array.isArray(data.claims)
+          ? data.claims
+          : [];
+
+      showAdminReviewPanel(true);
+      renderAdminReviews();
+
+    }catch(e){
+
+      /* Non-admin users simply do not see the admin panel. */
+      adminReviews = [];
+      showAdminReviewPanel(false);
+    }
+  }
+
+  async function reviewClaim(action,userId,taskId,btnEl){
+
+    if(adminRefreshBusy){
+      return;
+    }
+
+    const actionName =
+      action === 'approve'
+        ? 'Approve'
+        : 'Reject';
+
+    const claim =
+      adminReviews.find(
+        c =>
+          c.user_id === userId &&
+          c.task_id === taskId
+      );
+
+    if(!claim){
+      toast(
+        'This submission is no longer pending. Refreshing review list.'
+      );
+      await loadAdminReviews();
+      return;
+    }
+
+    const userName =
+      claim.google_name ||
+      claim.username ||
+      'this user';
+
+    const question =
+      action === 'approve'
+        ? 'Approve ' + userName + ' and award ' + fmt(claim.wp_reward || 0) + ' WP?'
+        : 'Reject the proof submitted by ' + userName + '?';
+
+    if(!window.confirm(question)){
+      return;
+    }
+
+    adminRefreshBusy = true;
+
+    const originalText =
+      btnEl.textContent;
+
+    btnEl.disabled = true;
+    btnEl.textContent =
+      actionName + '…';
+
+    const card =
+      btnEl.closest('.admin-review-card');
+
+    if(card){
+      $$('button',card).forEach(b => {
+        b.disabled = true;
+      });
+    }
+
+    try{
+
+      const functionName =
+        action === 'approve'
+          ? 'approve_task_claim'
+          : 'reject_task_claim';
+
+      const {
+        data,
+        error
+      } =
+        await sb.rpc(
+          functionName,
+          {
+            p_user_id:userId,
+            p_task_id:taskId
+          }
+        );
+
+      if(error){
+        throw error;
+      }
+
+      if(!data || !data.ok){
+        throw new Error(
+          (data && data.error) ||
+          'REVIEW_FAILED'
+        );
+      }
+
+      toast(
+        action === 'approve'
+          ? 'Approved — WP has been awarded.'
+          : 'Proof rejected. The user can resubmit.'
+      );
+
+      lbLoaded = false;
+
+      await loadStatus();
+
+    }catch(e){
+
+      console.error(
+        'Admin review error:',
+        e
+      );
+
+      if(card){
+        $$('button',card).forEach(b => {
+          b.disabled = false;
+        });
+      }else{
+        btnEl.disabled = false;
+      }
+
+      btnEl.textContent =
+        originalText;
+
+      toast(
+        'That review action failed. Please refresh and try again.',
+        true
+      );
+
+    }finally{
+
+      adminRefreshBusy = false;
+    }
+  }
+
+  $('#admin-review-refresh')
+    .addEventListener(
+      'click',
+      async function(){
+
+        if(adminRefreshBusy){
+          return;
+        }
+
+        this.disabled = true;
+        this.textContent = 'Refreshing…';
+
+        try{
+          await loadAdminReviews();
+        }finally{
+          this.disabled = false;
+          this.textContent = 'Refresh';
+        }
+      }
+    );
+
+  $('#admin-review-list')
+    .addEventListener(
+      'click',
+      function(e){
+
+        const approve =
+          e.target.closest('[data-admin-approve]');
+
+        if(approve){
+
+          reviewClaim(
+            'approve',
+            approve.dataset.adminUser,
+            approve.dataset.adminApprove,
+            approve
+          );
+
+          return;
+        }
+
+        const reject =
+          e.target.closest('[data-admin-reject]');
+
+        if(reject){
+
+          reviewClaim(
+            'reject',
+            reject.dataset.adminUser,
+            reject.dataset.adminReject,
+            reject
+          );
+        }
+      }
+    );
+
+  /* Refresh the admin queue periodically while the page is open. */
+  setInterval(
+    () => {
+      const panel = $('#admin-review');
+      if(panel && panel.classList.contains('visible') && !adminRefreshBusy){
+        loadAdminReviews().catch(() => {});
+      }
+    },
+    30000
+  );
 
   /* ---------- leaderboard ---------- */
 
