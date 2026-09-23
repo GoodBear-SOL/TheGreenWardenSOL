@@ -697,6 +697,11 @@ h1,h2,h3{
   color:#f0917f;
 }
 
+.task-proof input:disabled{
+  opacity:.65;
+  cursor:not-allowed;
+}
+
 .tasks-note{
   margin-top:16px;
   color:var(--ink-dim);
@@ -1994,8 +1999,8 @@ footer .disclaimer{
       </h2>
 
       <p class="ci-sub">
-        Open each link on X, do the action, then come back and claim.
-        Each task can only be claimed once per account.
+        Complete each task on X, then submit your proof link for manual review.
+        WP is awarded only after your submission has been verified and approved.
       </p>
 
       <div
@@ -2004,8 +2009,8 @@ footer .disclaimer{
       </div>
 
       <p class="tasks-note">
-        Claims are self-reported and reviewed periodically.
-        Accounts found gaming tasks may have WP reversed.
+        Social tasks require proof and manual verification. Opening the X link does not submit a claim and does not award WP.
+        WP is awarded only after your proof is approved.
       </p>
 
     </div>
@@ -3210,6 +3215,77 @@ footer .disclaimer{
     S =
       data;
 
+    /*
+      The social-task system has its own secure task-board RPC.
+      Keep get_my_status() as the source for the rest of the dashboard,
+      then merge the task-board data into S so no existing dashboard
+      features are changed.
+    */
+    try{
+
+      const {
+        data:taskBoard,
+        error:taskBoardError
+      } =
+        await sb.rpc(
+          'get_task_board'
+        );
+
+      if(taskBoardError){
+        throw taskBoardError;
+      }
+
+      if(taskBoard && taskBoard.ok){
+
+        S.tasks =
+          Array.isArray(taskBoard.tasks)
+            ? taskBoard.tasks
+            : [];
+
+        S.task_claims =
+          Array.isArray(taskBoard.task_claims)
+            ? taskBoard.task_claims
+            : [];
+
+      }else{
+
+        S.tasks =
+          Array.isArray(S.tasks)
+            ? S.tasks
+            : [];
+
+        S.task_claims =
+          Array.isArray(S.task_claims)
+            ? S.task_claims
+            : [];
+
+      }
+
+    }catch(taskError){
+
+      console.error(
+        'Task board load error:',
+        taskError
+      );
+
+      /*
+        Do not break the rest of the dashboard if the task board
+        has a temporary problem. The task UI will show the fallback
+        tasks only when appropriate.
+      */
+
+      S.tasks =
+        Array.isArray(S.tasks)
+          ? S.tasks
+          : [];
+
+      S.task_claims =
+        Array.isArray(S.task_claims)
+          ? S.task_claims
+          : [];
+
+    }
+
     fetchedAt =
       Date.now();
 
@@ -3824,27 +3900,102 @@ footer .disclaimer{
   /* ---------- social tasks ---------- */
 
   /*
-    Fallback task list, used only if the server hasn't been
-    upgraded yet to return `S.tasks` from get_my_status().
-    Once you run supabase/x-tasks-setup.sql, the server list
-    (with real ids and WP amounts) takes over automatically.
+    Fallback task list. The real task catalog returned by
+    get_task_board() always takes priority.
   */
   const FALLBACK_TASKS = [
     {
       id:'like-launch-post',
-      label:'Like the post',
-      url:'https://x.com/ThegoodbearSOL',
+      label:'Like + Reply to the Green Warden post',
+      url:'https://x.com/GreenWardenSol/status/2102614430681022855?s=20',
       wp_reward:50,
-      needs_proof:false
+      needs_proof:true
     },
     {
       id:'share-launch-post',
-      label:'Share the post',
-      url:'https://x.com/ThegoodbearSOL',
+      label:'Quote/Share the Green Warden post',
+      url:'https://x.com/GreenWardenSol/status/2102614430681022855?s=20',
       wp_reward:50,
       needs_proof:true
     }
   ];
+
+  function isValidXProofUrl(value){
+
+    const raw =
+      String(value || '').trim();
+
+    if(!raw){
+      return false;
+    }
+
+    try{
+
+      const u =
+        new URL(raw);
+
+      const host =
+        u.hostname.toLowerCase();
+
+      if(
+        u.protocol !== 'https:' &&
+        u.protocol !== 'http:'
+      ){
+        return false;
+      }
+
+      if(
+        host !== 'x.com' &&
+        host !== 'www.x.com' &&
+        host !== 'twitter.com' &&
+        host !== 'www.twitter.com'
+      ){
+        return false;
+      }
+
+      return u.pathname.length > 1;
+
+    }catch(_){
+
+      return false;
+    }
+  }
+
+  function taskClaimStatus(claim){
+
+    if(!claim){
+      return 'new';
+    }
+
+    return claim.status || 'approved';
+  }
+
+  function taskStatusText(task,claim,status){
+
+    if(status === 'approved'){
+
+      const date =
+        claim && claim.claimed_at
+          ? new Date(claim.claimed_at).toLocaleDateString()
+          : '';
+
+      return 'Approved' +
+        (date ? ' · ' + date : '') +
+        ' · WP awarded';
+    }
+
+    if(status === 'pending'){
+
+      return 'Pending manual review — WP has not been awarded yet.';
+    }
+
+    if(status === 'rejected'){
+
+      return 'Rejected — check your proof and resubmit.';
+    }
+
+    return 'Complete the task, paste your X proof link, then submit for manual review.';
+  }
 
   function renderTasks(){
 
@@ -3873,8 +4024,17 @@ footer .disclaimer{
       const claim =
         claims.get(task.id);
 
-      const isDone =
-        !!claim;
+      const status =
+        taskClaimStatus(claim);
+
+      const isApproved =
+        status === 'approved';
+
+      const isPending =
+        status === 'pending';
+
+      const isRejected =
+        status === 'rejected';
 
       const row =
         el(
@@ -3882,7 +4042,7 @@ footer .disclaimer{
           {
             class:
               'task-row' +
-              (isDone ? ' done' : ''),
+              (isApproved ? ' done' : ''),
             'data-task-row':task.id
           }
         );
@@ -3907,9 +4067,9 @@ footer .disclaimer{
             {
               class:'task-reward',
               text:
-                isDone
-                  ? '✓ Claimed · +' + fmt(task.wp_reward) + ' WP'
-                  : '+' + fmt(task.wp_reward) + ' WP'
+                isApproved
+                  ? '✓ Approved · +' + fmt(task.wp_reward) + ' WP'
+                  : '+' + fmt(task.wp_reward) + ' WP after approval'
             }
           )
         );
@@ -3927,25 +4087,35 @@ footer .disclaimer{
           }
         );
 
-      const claimBtn =
+      const buttonText =
+        isApproved
+          ? 'Approved'
+          : isPending
+            ? 'Pending Review'
+            : isRejected
+              ? 'Resubmit for Review'
+              : 'Submit for Review';
+
+      const submitBtn =
         el(
           'button',
           {
             class:'btn small primary',
             type:'button',
-            'data-claim-task':task.id,
-            text:
-              isDone
-                ? 'Claimed'
-                : 'I did it — Claim'
+            'data-submit-task':task.id,
+            text:buttonText
           }
         );
 
-      if(
-        isDone ||
-        !openedTasks.has(task.id)
-      ){
-        claimBtn.disabled = true;
+      if(isApproved || isPending){
+        submitBtn.disabled = true;
+      }else{
+        submitBtn.disabled =
+          !isValidXProofUrl(
+            claim && claim.proof_url
+              ? claim.proof_url
+              : ''
+          );
       }
 
       const actions =
@@ -3955,15 +4125,12 @@ footer .disclaimer{
             class:'task-actions'
           },
           openLink,
-          claimBtn
+          submitBtn
         );
 
       row.append(info,actions);
 
-      if(
-        task.needs_proof &&
-        !isDone
-      ){
+      if(task.needs_proof){
 
         const proofWrap =
           el(
@@ -3978,40 +4145,44 @@ footer .disclaimer{
             'input',
             {
               type:'url',
-              placeholder:'Paste the link to your reply/retweet (optional but helps verification)',
-              'data-proof-input':task.id
+              placeholder:
+                'Paste the public X link to your reply or quote post',
+              value:
+                claim && claim.proof_url
+                  ? claim.proof_url
+                  : '',
+              'data-proof-input':task.id,
+              'aria-label':'Proof link for ' + task.label
             }
           );
 
+        if(isApproved || isPending){
+          proofInput.disabled = true;
+        }
+
         proofWrap.append(proofInput);
-
         row.append(proofWrap);
-
       }
 
-      const status =
+      const statusEl =
         el(
           'div',
           {
-            class:'task-status',
-            'data-task-status':task.id
-          },
-
-          isDone
-            ? ('Claimed ' +
-                (
-                  claim.claimed_at
-                    ? new Date(claim.claimed_at).toLocaleDateString()
+            class:
+              'task-status' +
+              (
+                isApproved
+                  ? ' ok'
+                  : isRejected
+                    ? ' bad'
                     : ''
-                ))
-            : (
-                openedTasks.has(task.id)
-                  ? 'Opened — come back and claim once you\'ve done it.'
-                  : 'Open the link first, then claim.'
-              )
+              ),
+            'data-task-status':task.id,
+            text:taskStatusText(task,claim,status)
+          }
         );
 
-      row.append(status);
+      row.append(statusEl);
 
       list.append(row);
 
@@ -4034,50 +4205,79 @@ footer .disclaimer{
 
           openedTasks.add(id);
 
-          const claimBtn =
-            $(
-              '[data-claim-task="' +
-              id +
-              '"]',
-              this
-            );
-
-          if(claimBtn){
-            claimBtn.disabled = false;
-          }
-
-          const status =
-            $(
-              '[data-task-status="' +
-              id +
-              '"]',
-              this
-            );
-
-          if(status){
-
-            status.textContent =
-              'Opened — come back and claim once you\'ve done it.';
-
-          }
+          /*
+            Opening X NEVER enables or submits a claim.
+            The user must provide proof and submit it.
+          */
 
           return;
         }
 
-        const claimBtn =
-          e.target.closest('[data-claim-task]');
+        const submitBtn =
+          e.target.closest('[data-submit-task]');
 
-        if(claimBtn){
-          claimTask(
-            claimBtn.dataset.claimTask,
-            claimBtn
+        if(submitBtn){
+
+          submitTaskForReview(
+            submitBtn.dataset.submitTask,
+            submitBtn
           );
         }
 
       }
     );
 
-  async function claimTask(taskId,btnEl){
+  $('#task-list')
+    .addEventListener(
+      'input',
+      function(e){
+
+        const input =
+          e.target.closest('[data-proof-input]');
+
+        if(!input){
+          return;
+        }
+
+        const taskId =
+          input.dataset.proofInput;
+
+        const btn =
+          $('[data-submit-task="' + taskId + '"]', this);
+
+        if(!btn || btn.disabled){
+          return;
+        }
+
+        btn.disabled =
+          !isValidXProofUrl(input.value);
+
+        const status =
+          $('[data-task-status="' + taskId + '"]', this);
+
+        if(status && input.value.trim()){
+
+          if(isValidXProofUrl(input.value)){
+
+            status.className =
+              'task-status';
+
+            status.textContent =
+              'Proof link looks valid. Submit it for manual review.';
+
+          }else{
+
+            status.className =
+              'task-status bad';
+
+            status.textContent =
+              'Please enter a valid public X or Twitter URL.';
+          }
+        }
+      }
+    );
+
+  async function submitTaskForReview(taskId,btnEl){
 
     const status =
       $('[data-task-status="' + taskId + '"]');
@@ -4090,14 +4290,33 @@ footer .disclaimer{
         ? proofInput.value.trim()
         : '';
 
-    btnEl.disabled =
-      true;
+    if(!isValidXProofUrl(proofUrl)){
+
+      if(status){
+
+        status.className =
+          'task-status bad';
+
+        status.textContent =
+          'Please paste a valid public X or Twitter proof link.';
+      }
+
+      toast(
+        'Please paste your X proof link before submitting.',
+        true
+      );
+
+      return;
+    }
 
     const originalText =
       btnEl.textContent;
 
+    btnEl.disabled =
+      true;
+
     btnEl.textContent =
-      'Claiming…';
+      'Submitting…';
 
     if(status){
 
@@ -4105,8 +4324,7 @@ footer .disclaimer{
         'task-status';
 
       status.textContent =
-        'Checking…';
-
+        'Submitting proof for manual review…';
     }
 
     try{
@@ -4116,10 +4334,10 @@ footer .disclaimer{
         error
       } =
         await sb.rpc(
-          'claim_task',
+          'submit_task_for_review',
           {
             p_task_id:taskId,
-            p_proof_url:proofUrl || null
+            p_proof_url:proofUrl
           }
         );
 
@@ -4127,20 +4345,41 @@ footer .disclaimer{
         throw error;
       }
 
-      if(!data.ok){
+      if(!data || !data.ok){
 
         const reasons = {
 
-          ALREADY_CLAIMED:
-            'You already claimed this task.',
+          ALREADY_APPROVED:
+            'This task has already been approved for your account.',
+
+          ALREADY_PENDING:
+            'This task is already waiting for manual review.',
+
+          PROOF_REQUIRED:
+            'A proof link is required.',
+
+          INVALID_PROOF_URL:
+            'Please provide a valid proof URL.',
+
+          INVALID_X_PROOF_URL:
+            'Please provide a public X or Twitter proof URL.',
 
           UNKNOWN_TASK:
             'This task is no longer available.',
 
           TASK_INACTIVE:
-            'This task isn\'t active right now.'
+            'This task is not active right now.',
 
+          PROFILE_NOT_FOUND:
+            'Your Warden profile could not be found.',
+
+          NOT_AUTHENTICATED:
+            'Your session has expired. Please sign in again.'
         };
+
+        const message =
+          reasons[data && data.error] ||
+          'Proof could not be submitted. Please try again.';
 
         if(status){
 
@@ -4148,14 +4387,11 @@ footer .disclaimer{
             'task-status bad';
 
           status.textContent =
-            reasons[data.error] ||
-            'Couldn\'t claim this task. Try again.';
-
+            message;
         }
 
         toast(
-          reasons[data.error] ||
-          'Couldn\'t claim this task.',
+          message,
           true
         );
 
@@ -4163,32 +4399,31 @@ footer .disclaimer{
           originalText;
 
         btnEl.disabled =
-          data.error === 'ALREADY_CLAIMED';
+          !isValidXProofUrl(proofUrl);
 
-      }else{
+        if(data && data.error === 'NOT_AUTHENTICATED'){
 
-        floatPoints(
-          data.wp_awarded,
-          btnEl
-        );
+          window.location.replace(
+            LOGIN_PAGE
+          );
+        }
 
-        toast(
-          '+' +
-          data.wp_awarded +
-          ' WP — task claimed!'
-        );
-
-        lbLoaded =
-          false;
-
-        await loadStatus();
-
+        return;
       }
+
+      toast(
+        'Proof submitted — waiting for manual review.'
+      );
+
+      lbLoaded =
+        false;
+
+      await loadStatus();
 
     }catch(e){
 
       console.error(
-        'Task claim error:',
+        'Task proof submission error:',
         e
       );
 
@@ -4198,12 +4433,11 @@ footer .disclaimer{
           'task-status bad';
 
         status.textContent =
-          'Claim didn\'t go through. Try again.';
-
+          'Submission failed. Please try again.';
       }
 
       toast(
-        'Claim didn\'t go through. Please try again.',
+        'Proof submission failed. Please try again.',
         true
       );
 
@@ -4211,8 +4445,7 @@ footer .disclaimer{
         originalText;
 
       btnEl.disabled =
-        false;
-
+        !isValidXProofUrl(proofUrl);
     }
 
   }
