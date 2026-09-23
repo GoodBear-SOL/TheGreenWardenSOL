@@ -1,31 +1,17 @@
 -- =========================================================
--- THE GREEN WARDEN — SOCIAL TASKS SYSTEM
+-- THE GREEN WARDEN — VERIFIED SOCIAL TASK SYSTEM
 -- =========================================================
--- Purpose:
---   Social engagement tasks with mandatory proof support.
---
--- Requirements:
---   public.profiles.id = auth user UUID
---   public.profiles.wp = user's WP balance
---
--- This SQL:
---   1. Creates/updates the task catalog
---   2. Creates/updates task claims
---   3. Requires proof when a task needs proof
---   4. Prevents duplicate claims
---   5. Validates submitted proof URLs
---   6. Awards WP only after a valid claim is created
---   7. Provides the dashboard task board
+-- Flow:
+--   1. User opens X
+--   2. User performs the task
+--   3. User submits proof URL
+--   4. Claim becomes PENDING
+--   5. Admin manually reviews
+--   6. Admin approves/rejects
+--   7. WP is awarded ONLY on approval
 --
 -- IMPORTANT:
---   Replace the two X URLs below with your ACTUAL X POST URLs.
---
--- Example:
---   https://x.com/ThegoodbearSOL/status/1234567890123456789
---
--- Do NOT use only:
---   https://x.com/ThegoodbearSOL
---
+-- Opening the X link never grants WP.
 -- =========================================================
 
 
@@ -45,11 +31,9 @@ create table if not exists public.tasks (
 );
 
 
--- Enable RLS
 alter table public.tasks enable row level security;
 
 
--- Recreate read policy safely
 drop policy if exists "tasks_read"
 on public.tasks;
 
@@ -62,20 +46,14 @@ using (true);
 
 
 -- =========================================================
--- 2. SOCIAL TASKS
+-- 2. TASKS
 -- =========================================================
+-- Task 1:
+-- Like + Reply gives the user a public URL that can be
+-- manually checked.
 --
--- IMPORTANT:
--- Replace the URLs below before running this SQL.
---
--- For the Like task, proof is mandatory as a self-report.
--- A submitted X URL does NOT technically prove that the
--- user clicked Like. It is stored for manual review.
---
--- If you want stronger proof for the first task, consider
--- changing it later to "Like + Reply to the post" so the
--- user can submit the URL of their own reply.
---
+-- Task 2:
+-- Share/Quote post and submit the resulting X URL.
 -- =========================================================
 
 insert into public.tasks (
@@ -88,15 +66,17 @@ insert into public.tasks (
     sort_order
 )
 values
+
 (
     'like-launch-post',
-    'Like the Green Warden post',
+    'Like + Reply to the Green Warden post',
     'https://x.com/GreenWardenSol/status/2102614430681022855?s=20',
     50,
     true,
     true,
     1
 ),
+
 (
     'share-launch-post',
     'Share the Green Warden post',
@@ -106,6 +86,7 @@ values
     true,
     2
 )
+
 on conflict (id) do update
 set
     label       = excluded.label,
@@ -129,19 +110,55 @@ create table if not exists public.task_claims (
         references public.tasks(id)
         on delete cascade,
 
-    wp_awarded    integer not null,
+    wp_awarded    integer not null default 0,
+
     proof_url     text,
+
+    status        text not null default 'pending'
+        check (status in ('pending', 'approved', 'rejected')),
+
     claimed_at    timestamptz not null default now(),
+
+    reviewed_at   timestamptz,
+
+    reviewed_by   uuid,
 
     primary key (user_id, task_id)
 );
 
 
--- Enable RLS
+-- Add new columns if task_claims already existed
+alter table public.task_claims
+add column if not exists status text;
+
+alter table public.task_claims
+add column if not exists reviewed_at timestamptz;
+
+alter table public.task_claims
+add column if not exists reviewed_by uuid;
+
+
+-- Existing claims were already awarded by the old system.
+-- Treat them as approved so their WP remains valid.
+
+update public.task_claims
+set
+    status = 'approved',
+    wp_awarded = coalesce(wp_awarded, 0)
+where status is null;
+
+
+alter table public.task_claims
+alter column status set default 'pending';
+
+
+-- =========================================================
+-- 4. RLS
+-- =========================================================
+
 alter table public.task_claims enable row level security;
 
 
--- Recreate user's own claims policy
 drop policy if exists "task_claims_read_own"
 on public.task_claims;
 
@@ -155,55 +172,36 @@ using (
 );
 
 
--- IMPORTANT:
--- There is intentionally NO INSERT policy.
+-- No INSERT policy.
+-- No UPDATE policy.
 --
--- Users cannot directly insert task claims from the browser.
--- Claims must go through claim_task().
---
+-- Users MUST use the RPC functions below.
 
 
 -- =========================================================
--- 4. CLAIM TASK FUNCTION
--- =========================================================
---
--- Security improvements:
---
---   • Requires authentication
---   • Requires an existing profile
---   • Requires an active task
---   • Prevents duplicate claims
---   • Requires proof when needs_proof = true
---   • Rejects obviously invalid proof URLs
---   • Accepts only HTTP/HTTPS proof URLs
---   • For X tasks, requires an X/Twitter URL
---
--- IMPORTANT:
---   This does NOT automatically verify that the user actually
---   performed the action on X.
---   It only requires the user to submit proof.
---
+-- 5. SUBMIT TASK FOR REVIEW
 -- =========================================================
 
-create or replace function public.claim_task(
+create or replace function public.submit_task_for_review(
     p_task_id text,
-    p_proof_url text default null
+    p_proof_url text
 )
 returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $$
+
 declare
-    v_uid               uuid;
-    v_task              public.tasks%rowtype;
-    v_wp_award          integer;
-    v_profile_exists    boolean;
-    v_proof             text;
+    v_uid uuid;
+    v_task public.tasks%rowtype;
+    v_proof text;
+    v_existing public.task_claims%rowtype;
+
 begin
 
     -- -----------------------------------------------------
-    -- 1. Identify logged-in user
+    -- Identify user
     -- -----------------------------------------------------
 
     v_uid := auth.uid();
@@ -219,18 +217,14 @@ begin
 
 
     -- -----------------------------------------------------
-    -- 2. Verify profile exists
+    -- Verify profile
     -- -----------------------------------------------------
 
-    select exists (
+    if not exists (
         select 1
         from public.profiles
         where id = v_uid
-    )
-    into v_profile_exists;
-
-
-    if not v_profile_exists then
+    ) then
 
         return jsonb_build_object(
             'ok', false,
@@ -241,7 +235,7 @@ begin
 
 
     -- -----------------------------------------------------
-    -- 3. Find task
+    -- Find task
     -- -----------------------------------------------------
 
     select *
@@ -260,10 +254,6 @@ begin
     end if;
 
 
-    -- -----------------------------------------------------
-    -- 4. Check task status
-    -- -----------------------------------------------------
-
     if not v_task.active then
 
         return jsonb_build_object(
@@ -274,11 +264,8 @@ begin
     end if;
 
 
-    v_wp_award := v_task.wp_reward;
-
-
     -- -----------------------------------------------------
-    -- 5. Clean proof URL
+    -- Clean proof
     -- -----------------------------------------------------
 
     v_proof := nullif(
@@ -288,7 +275,7 @@ begin
 
 
     -- -----------------------------------------------------
-    -- 6. Require proof when configured
+    -- Proof is mandatory
     -- -----------------------------------------------------
 
     if v_task.needs_proof = true
@@ -303,123 +290,125 @@ begin
 
 
     -- -----------------------------------------------------
-    -- 7. Validate proof URL format
+    -- Validate URL
     -- -----------------------------------------------------
-    --
-    -- Only HTTP/HTTPS URLs are accepted.
-    --
 
-    if v_proof is not null then
+    if v_proof !~* '^https?://' then
 
-        if v_proof !~* '^https?://'
-        then
-
-            return jsonb_build_object(
-                'ok', false,
-                'error', 'INVALID_PROOF_URL'
-            );
-
-        end if;
+        return jsonb_build_object(
+            'ok', false,
+            'error', 'INVALID_PROOF_URL'
+        );
 
     end if;
 
 
     -- -----------------------------------------------------
-    -- 8. X-specific proof validation
+    -- X/Twitter only
     -- -----------------------------------------------------
-    --
-    -- Social tasks currently use X.
-    --
-    -- We accept:
-    --   x.com
-    --   www.x.com
-    --   twitter.com
-    --   www.twitter.com
-    --
-    -- This does NOT verify the action itself.
-    --
 
-    if v_task.needs_proof = true then
+    if v_proof !~* '^https?://(www\.)?(x\.com|twitter\.com)/' then
 
-        if v_proof !~* '^https?://(www\.)?(x\.com|twitter\.com)/'
-        then
-
-            return jsonb_build_object(
-                'ok', false,
-                'error', 'INVALID_X_PROOF_URL'
-            );
-
-        end if;
+        return jsonb_build_object(
+            'ok', false,
+            'error', 'INVALID_X_PROOF_URL'
+        );
 
     end if;
 
 
     -- -----------------------------------------------------
-    -- 9. Prevent duplicate claim
+    -- Check previous claim
     -- -----------------------------------------------------
 
-    begin
+    select *
+    into v_existing
+    from public.task_claims
+    where user_id = v_uid
+      and task_id = p_task_id;
+
+
+    if found then
+
+        if v_existing.status = 'pending' then
+
+            return jsonb_build_object(
+                'ok', false,
+                'error', 'ALREADY_PENDING'
+            );
+
+        end if;
+
+
+        if v_existing.status = 'approved' then
+
+            return jsonb_build_object(
+                'ok', false,
+                'error', 'ALREADY_APPROVED'
+            );
+
+        end if;
+
+
+        -- Rejected claim can be resubmitted.
+        update public.task_claims
+        set
+            proof_url = v_proof,
+            status = 'pending',
+            wp_awarded = 0,
+            claimed_at = now(),
+            reviewed_at = null,
+            reviewed_by = null
+        where user_id = v_uid
+          and task_id = p_task_id;
+
+    else
 
         insert into public.task_claims (
             user_id,
             task_id,
             wp_awarded,
-            proof_url
+            proof_url,
+            status
         )
         values (
             v_uid,
             p_task_id,
-            v_wp_award,
-            v_proof
+            0,
+            v_proof,
+            'pending'
         );
 
-    exception
-        when unique_violation then
+    end if;
 
-            return jsonb_build_object(
-                'ok', false,
-                'error', 'ALREADY_CLAIMED'
-            );
-
-    end;
-
-
-    -- -----------------------------------------------------
-    -- 10. Award WP
-    -- -----------------------------------------------------
-
-    update public.profiles
-    set wp = coalesce(wp, 0) + v_wp_award
-    where id = v_uid;
-
-
-    -- -----------------------------------------------------
-    -- 11. Return success
-    -- -----------------------------------------------------
 
     return jsonb_build_object(
         'ok', true,
+        'status', 'pending',
         'task_id', p_task_id,
-        'wp_awarded', v_wp_award,
-        'proof_submitted', (v_proof is not null)
+        'message', 'Proof submitted for manual review.'
     );
 
+
+exception
+    when unique_violation then
+
+        return jsonb_build_object(
+            'ok', false,
+            'error', 'ALREADY_PENDING'
+        );
 
 end;
 $$;
 
 
--- =========================================================
--- 5. FUNCTION PERMISSION
--- =========================================================
-
 grant execute
-on function public.claim_task(text, text)
+on function public.submit_task_for_review(text, text)
 to authenticated;
 
 
 -- =========================================================
--- 6. TASK BOARD FUNCTION
+-- 6. TASK BOARD
 -- =========================================================
 
 create or replace function public.get_task_board()
@@ -428,13 +417,11 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+
 declare
     v_uid uuid;
-begin
 
-    -- -----------------------------------------------------
-    -- Identify user
-    -- -----------------------------------------------------
+begin
 
     v_uid := auth.uid();
 
@@ -449,19 +436,11 @@ begin
     end if;
 
 
-    -- -----------------------------------------------------
-    -- Return task board
-    -- -----------------------------------------------------
-
     return jsonb_build_object(
 
         'ok',
         true,
 
-
-        -- -------------------------------------------------
-        -- ACTIVE TASKS
-        -- -------------------------------------------------
 
         'tasks',
 
@@ -479,16 +458,10 @@ begin
                 ),
                 '[]'::jsonb
             )
-
             from public.tasks t
-
             where t.active = true
         ),
 
-
-        -- -------------------------------------------------
-        -- USER CLAIMS
-        -- -------------------------------------------------
 
         'task_claims',
 
@@ -498,15 +471,16 @@ begin
                     jsonb_build_object(
                         'task_id', c.task_id,
                         'wp_awarded', c.wp_awarded,
-                        'claimed_at', c.claimed_at
+                        'proof_url', c.proof_url,
+                        'status', c.status,
+                        'claimed_at', c.claimed_at,
+                        'reviewed_at', c.reviewed_at
                     )
                     order by c.claimed_at desc
                 ),
                 '[]'::jsonb
             )
-
             from public.task_claims c
-
             where c.user_id = v_uid
         )
 
@@ -516,83 +490,211 @@ end;
 $$;
 
 
--- =========================================================
--- 7. FUNCTION PERMISSION
--- =========================================================
-
 grant execute
 on function public.get_task_board()
 to authenticated;
 
 
 -- =========================================================
--- 8. ADMIN REVIEW QUERY
+-- 7. ADMIN APPROVE
 -- =========================================================
 --
--- DO NOT create this as a public view.
+-- IMPORTANT:
+-- Only run this manually from Supabase SQL Editor
+-- after you personally verify the proof.
 --
--- Run this manually in Supabase SQL Editor when you want
--- to inspect submitted proofs.
---
+-- Replace USER_UUID and TASK_ID.
 -- =========================================================
 
--- SELECT
---     tc.claimed_at,
---     tc.user_id,
---     p.username,
---     p.google_name,
---     t.id AS task_id,
---     t.label,
---     tc.wp_awarded,
---     tc.proof_url
--- FROM public.task_claims tc
--- JOIN public.tasks t
---     ON t.id = tc.task_id
--- LEFT JOIN public.profiles p
---     ON p.id = tc.user_id
--- ORDER BY tc.claimed_at DESC;
-
-
--- =========================================================
--- 9. VERIFY TASK CATALOG
--- =========================================================
-
-select
-    id,
-    label,
-    url,
-    wp_reward,
-    needs_proof,
-    active,
-    sort_order
-from public.tasks
-order by sort_order;
-
-
--- =========================================================
--- 10. VERIFY FUNCTIONS
--- =========================================================
-
-select
-    routine_name
-from information_schema.routines
-where routine_schema = 'public'
-and routine_name in (
-    'claim_task',
-    'get_task_board'
+create or replace function public.approve_task_claim(
+    p_user_id uuid,
+    p_task_id text
 )
-order by routine_name;
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+
+declare
+    v_claim public.task_claims%rowtype;
+    v_reward integer;
+
+begin
+
+    select *
+    into v_claim
+    from public.task_claims
+    where user_id = p_user_id
+      and task_id = p_task_id
+    for update;
+
+
+    if not found then
+
+        return jsonb_build_object(
+            'ok', false,
+            'error', 'CLAIM_NOT_FOUND'
+        );
+
+    end if;
+
+
+    if v_claim.status = 'approved' then
+
+        return jsonb_build_object(
+            'ok', false,
+            'error', 'ALREADY_APPROVED'
+        );
+
+    end if;
+
+
+    if v_claim.status <> 'pending' then
+
+        return jsonb_build_object(
+            'ok', false,
+            'error', 'CLAIM_NOT_PENDING'
+        );
+
+    end if;
+
+
+    select wp_reward
+    into v_reward
+    from public.tasks
+    where id = p_task_id;
+
+
+    if v_reward is null then
+
+        return jsonb_build_object(
+            'ok', false,
+            'error', 'TASK_NOT_FOUND'
+        );
+
+    end if;
+
+
+    -- Award WP ONLY NOW
+    update public.profiles
+    set wp = coalesce(wp, 0) + v_reward
+    where id = p_user_id;
+
+
+    update public.task_claims
+    set
+        status = 'approved',
+        wp_awarded = v_reward,
+        reviewed_at = now(),
+        reviewed_by = auth.uid()
+    where user_id = p_user_id
+      and task_id = p_task_id;
+
+
+    return jsonb_build_object(
+        'ok', true,
+        'status', 'approved',
+        'wp_awarded', v_reward
+    );
+
+end;
+$$;
+
+
+-- DO NOT grant this to authenticated users.
+-- This function is intended for administrator use only.
 
 
 -- =========================================================
--- 11. VERIFY CLAIM TABLE
+-- 8. ADMIN REJECT
+-- =========================================================
+
+create or replace function public.reject_task_claim(
+    p_user_id uuid,
+    p_task_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+
+declare
+    v_claim public.task_claims%rowtype;
+
+begin
+
+    select *
+    into v_claim
+    from public.task_claims
+    where user_id = p_user_id
+      and task_id = p_task_id
+    for update;
+
+
+    if not found then
+
+        return jsonb_build_object(
+            'ok', false,
+            'error', 'CLAIM_NOT_FOUND'
+        );
+
+    end if;
+
+
+    if v_claim.status <> 'pending' then
+
+        return jsonb_build_object(
+            'ok', false,
+            'error', 'CLAIM_NOT_PENDING'
+        );
+
+    end if;
+
+
+    update public.task_claims
+    set
+        status = 'rejected',
+        wp_awarded = 0,
+        reviewed_at = now(),
+        reviewed_by = auth.uid()
+    where user_id = p_user_id
+      and task_id = p_task_id;
+
+
+    return jsonb_build_object(
+        'ok', true,
+        'status', 'rejected'
+    );
+
+end;
+$$;
+
+
+-- DO NOT grant this to authenticated users.
+
+
+-- =========================================================
+-- 9. ADMIN REVIEW QUERY
 -- =========================================================
 
 select
-    column_name,
-    data_type,
-    is_nullable
-from information_schema.columns
-where table_schema = 'public'
-and table_name = 'task_claims'
-order by ordinal_position;
+    tc.claimed_at,
+    tc.status,
+    tc.user_id,
+    p.username,
+    p.google_name,
+    t.id as task_id,
+    t.label,
+    t.wp_reward,
+    tc.wp_awarded,
+    tc.proof_url,
+    tc.reviewed_at,
+    tc.reviewed_by
+from public.task_claims tc
+join public.tasks t
+    on t.id = tc.task_id
+left join public.profiles p
+    on p.id = tc.user_id
+order by tc.claimed_at desc;
