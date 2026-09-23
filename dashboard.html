@@ -2015,75 +2015,77 @@ body::after{
 }
 .gw-field-scene{
   position:absolute;
-  inset:-8%;
+  inset:-7%;
   background-image:
-    linear-gradient(180deg,rgba(1,7,4,.30) 0%,rgba(1,9,5,.46) 48%,rgba(1,6,4,.82) 100%),
+    linear-gradient(180deg,rgba(1,7,4,.08) 0%,rgba(1,8,5,.18) 48%,rgba(1,5,3,.52) 100%),
     url('assets/green-warden-field.webp');
   background-size:cover,cover;
-  background-position:center,center 42%;
+  background-position:center,center 44%;
   background-repeat:no-repeat;
-  opacity:.27;
-  filter:saturate(.72) contrast(1.05) brightness(.70);
-  transform:scale(1.04);
-  animation:gwFieldDrift 34s ease-in-out infinite alternate;
+  opacity:.62;
+  filter:saturate(.88) contrast(1.06) brightness(.78);
+  transform:scale(1.06) translate3d(0,0,0);
+  animation:gwFieldDrift 30s ease-in-out infinite alternate;
   will-change:transform,background-position;
 }
+/* A second, softer depth pass makes the Wardens feel embedded in the field. */
 .gw-field-depth{
   position:absolute;
-  inset:-12%;
+  inset:-14%;
   background-image:url('assets/green-warden-field.webp');
-  background-size:125% auto;
-  background-position:72% 48%;
+  background-size:145% auto;
+  background-position:54% 46%;
   background-repeat:no-repeat;
-  opacity:.075;
-  filter:blur(2px) saturate(.65) brightness(.72);
+  opacity:.13;
+  filter:blur(3px) saturate(.72) brightness(.68);
   mix-blend-mode:screen;
-  animation:gwFieldDepth 46s ease-in-out infinite alternate;
+  animation:gwFieldDepth 42s ease-in-out infinite alternate;
 }
 .gw-field-fog{
   position:absolute;
-  inset:-20%;
+  inset:-24%;
   background:
-    radial-gradient(ellipse at 18% 54%,rgba(159,235,180,.10),transparent 25%),
-    radial-gradient(ellipse at 78% 42%,rgba(116,222,153,.075),transparent 27%),
-    linear-gradient(90deg,transparent 0%,rgba(147,218,166,.045) 48%,transparent 100%);
-  filter:blur(18px);
-  opacity:.70;
+    radial-gradient(ellipse at 15% 58%,rgba(182,240,193,.14),transparent 24%),
+    radial-gradient(ellipse at 76% 44%,rgba(119,229,154,.11),transparent 26%),
+    linear-gradient(90deg,transparent 0%,rgba(164,228,181,.055) 46%,transparent 68%);
+  filter:blur(22px);
+  opacity:.75;
   animation:gwFogDrift 24s ease-in-out infinite alternate;
+}
+/* Moving atmospheric light — deliberately soft so text/cards stay clear. */
+.gw-field-rays{
+  position:absolute;
+  inset:-15%;
+  opacity:.16;
+  background:
+    linear-gradient(103deg,transparent 30%,rgba(114,255,159,.14) 42%,transparent 51%),
+    linear-gradient(77deg,transparent 46%,rgba(114,255,159,.09) 55%,transparent 64%);
+  filter:blur(11px);
+  transform:translateX(-5%);
+  animation:gwRays 18s ease-in-out infinite alternate;
 }
 .gw-field-veil{
   position:absolute;
   inset:0;
   background:
-    radial-gradient(ellipse at center,transparent 0%,rgba(1,7,4,.10) 48%,rgba(1,5,3,.66) 100%),
-    linear-gradient(180deg,rgba(1,7,4,.10),rgba(1,7,4,.22));
-}
-.gw-field-rays{
-  position:absolute;
-  inset:-10%;
-  opacity:.13;
-  background:
-    linear-gradient(103deg,transparent 32%,rgba(114,255,159,.11) 42%,transparent 50%),
-    linear-gradient(77deg,transparent 48%,rgba(114,255,159,.07) 55%,transparent 63%);
-  filter:blur(9px);
-  transform:translateX(-4%);
-  animation:gwRays 19s ease-in-out infinite alternate;
+    radial-gradient(ellipse at center,transparent 0%,rgba(1,7,4,.02) 48%,rgba(1,5,3,.38) 100%),
+    linear-gradient(180deg,rgba(1,7,4,.04),rgba(1,7,4,.14));
 }
 @keyframes gwFieldDrift{
-  0%{transform:scale(1.04) translate3d(-1.2%,.3%,0);background-position:center,48% 42%}
-  100%{transform:scale(1.10) translate3d(1.4%,-.8%,0);background-position:center,55% 47%}
+  0%{transform:scale(1.06) translate3d(-1.5%,.4%,0);background-position:center,47% 42%}
+  100%{transform:scale(1.12) translate3d(1.8%,-.9%,0);background-position:center,54% 48%}
 }
 @keyframes gwFieldDepth{
-  0%{transform:translate3d(2%,0,0) scale(1)}
-  100%{transform:translate3d(-2.5%,-1%,0) scale(1.04)}
+  0%{transform:translate3d(2%,.3%,0) scale(1)}
+  100%{transform:translate3d(-2.8%,-1.2%,0) scale(1.055)}
 }
 @keyframes gwFogDrift{
-  0%{transform:translate3d(-4%,2%,0) scale(1)}
-  100%{transform:translate3d(5%,-2%,0) scale(1.06)}
+  0%{transform:translate3d(-5%,2%,0) scale(1)}
+  100%{transform:translate3d(6%,-2.5%,0) scale(1.08)}
 }
 @keyframes gwRays{
-  0%{transform:translateX(-5%) rotate(-1deg);opacity:.08}
-  100%{transform:translateX(5%) rotate(1deg);opacity:.16}
+  0%{transform:translateX(-7%) rotate(-1deg);opacity:.07}
+  100%{transform:translateX(7%) rotate(1deg);opacity:.18}
 }
 
 .head,.wrap,footer,.admin-profile-overlay,#toast{position:relative;z-index:2}
@@ -2193,8 +2195,8 @@ body.admin-mode .admin-review{margin-top:0;border-radius:24px;position:relative;
   .tab-btn{white-space:nowrap}
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .lb-head{align-items:flex-start}
-  .gw-field-scene{opacity:.23;background-position:center,52% 44%}
-  .gw-field-depth{opacity:.045}
+  .gw-field-scene{opacity:.48;background-position:center,52% 44%}
+  .gw-field-depth{opacity:.08}
 }
 
 @media(prefers-reduced-motion:reduce){
