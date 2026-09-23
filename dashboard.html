@@ -48,7 +48,7 @@ body{
     radial-gradient(ellipse at 90% 20%,rgba(110,31,31,.10),transparent 40%),
     radial-gradient(ellipse at 50% 100%,rgba(31,107,66,.12),transparent 50%),
     var(--void);
-  background-attachment:fixed;
+  background-attachment:scroll;
 }
 
 body::after{
@@ -2298,6 +2298,159 @@ body.admin-mode .admin-review{margin-top:0;border-radius:24px;position:relative;
   .gw-field-scene,.gw-field-depth,.gw-field-fog,.gw-field-rays,.gw-interaction-fog,.gw-interaction-fog::before,.gw-interaction-fog::after,.gw-scroll-mist,.rank-card::before,.tasks-card::before,.admin-review::before{animation:none !important}
 }
 
+
+/* =========================================================
+   PERFORMANCE / MOBILE SMOOTHNESS
+   Keeps the cinematic Green Warden look while avoiding
+   expensive filters, fixed layers and continuous effects
+   on touch/mobile devices.
+   ========================================================= */
+
+html{
+  -webkit-text-size-adjust:100%;
+  text-rendering:optimizeLegibility;
+}
+
+.gw-ambient{
+  contain:paint;
+}
+
+.gw-field-scene,
+.gw-field-depth,
+.gw-field-fog,
+.gw-field-rays{
+  pointer-events:none;
+}
+
+@media (max-width:760px), (hover:none) and (pointer:coarse){
+
+  /* Fixed + blended noise layers can stutter on mobile Safari/Chrome. */
+  body{
+    background-attachment:scroll;
+  }
+
+  body::after{
+    display:none;
+  }
+
+  /* Keep the main Warden environment static on phones.
+     Static GPU-friendly imagery is much smoother than several
+     simultaneous blurred animated layers. */
+  .gw-field-scene{
+    animation:none !important;
+    transform:none !important;
+    filter:saturate(.90) contrast(1.02) brightness(.78);
+    opacity:.38;
+    background-size:cover;
+    background-position:center 46%;
+    will-change:auto;
+  }
+
+  .gw-field-depth,
+  .gw-field-fog,
+  .gw-field-rays,
+  .gw-interaction-fog,
+  .gw-scroll-mist{
+    display:none !important;
+    animation:none !important;
+  }
+
+  /* Backdrop-filter is one of the most common sources of mobile
+     frame drops when several translucent cards overlap. */
+  .head,
+  .stats,
+  .checkin-strip,
+  .rank-card,
+  .tasks-card,
+  .chapter,
+  .lb,
+  .admin-review,
+  .admin-profile-card{
+    -webkit-backdrop-filter:none !important;
+    backdrop-filter:none !important;
+  }
+
+  .head{
+    background:rgba(2,9,6,.96);
+  }
+
+  .stats,
+  .checkin-strip,
+  .rank-card,
+  .tasks-card,
+  .chapter,
+  .lb,
+  .admin-review,
+  .admin-profile-card{
+    box-shadow:0 12px 34px rgba(0,0,0,.20);
+  }
+
+  /* Continuous sheen/pulse effects are decorative and costly on
+     small GPUs; keep the actual interactions intact. */
+  .rank-card::before,
+  .tasks-card::before,
+  .admin-review::before,
+  #ci-btn:not([disabled]){
+    animation:none !important;
+  }
+
+  .tab-btn:hover,
+  .btn:hover,
+  .stat:hover,
+  .lb-row:hover,
+  .task-item:hover,
+  .task-card:hover,
+  .task:hover{
+    transform:none !important;
+  }
+
+  .tabs{
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:contain;
+  }
+
+  /* Prevent very long text from creating horizontal layout pressure. */
+  .page-title,
+  .page-sub,
+  .chapter p,
+  .prophecy,
+  .rules{
+    overflow-wrap:anywhere;
+  }
+
+  /* Slightly smaller atmospheric/surface shadows on narrow screens. */
+  .page-title{
+    text-shadow:0 0 22px rgba(84,239,135,.10);
+  }
+
+  .float-wp{
+    font-size:1.65rem;
+  }
+}
+
+/* Users who explicitly request reduced motion get a lighter page
+   even on desktop. */
+@media (prefers-reduced-motion:reduce){
+  html{
+    scroll-behavior:auto !important;
+  }
+
+  .gw-field-scene,
+  .gw-field-depth,
+  .gw-field-fog,
+  .gw-field-rays,
+  .gw-interaction-fog,
+  .gw-interaction-fog::before,
+  .gw-interaction-fog::after,
+  .gw-scroll-mist,
+  .rank-card::before,
+  .tasks-card::before,
+  .admin-review::before,
+  #ci-btn:not([disabled]){
+    animation:none !important;
+  }
+}
+
 </style>
 </head>
 
@@ -2323,7 +2476,11 @@ body.admin-mode .admin-review{margin-top:0;border-radius:24px;position:relative;
   <img
     class="boot-warden"
     src="assets/TheGreenWarden.png"
-    alt="The Green Warden">
+    alt="The Green Warden"
+    width="110"
+    height="110"
+    decoding="async"
+    fetchpriority="high">
 
   <p id="boot-msg">
     Awakening the Green Warden…
@@ -2345,7 +2502,11 @@ body.admin-mode .admin-review{margin-top:0;border-radius:24px;position:relative;
         class="brand-warden"
         src="assets/TheGreenWarden.png"
         alt=""
-        aria-hidden="true">
+        aria-hidden="true"
+        width="34"
+        height="34"
+        decoding="async"
+        loading="lazy">
 
       The Green Warden
 
@@ -3694,6 +3855,12 @@ body.admin-mode .admin-review{margin-top:0;border-radius:24px;position:relative;
 
     img.referrerPolicy =
       'no-referrer';
+
+    img.decoding =
+      'async';
+
+    img.loading =
+      'lazy';
 
     img.src =
       url;
@@ -6522,29 +6689,43 @@ body.admin-mode .admin-review{margin-top:0;border-radius:24px;position:relative;
     }, 1300);
   }
 
-  // Tabs and meaningful dashboard actions get a short cinematic mist sweep.
-  document.addEventListener('click', (event) => {
-    const target = event.target.closest('.tab-btn, .btn, .admin-lb-name, [data-action], button');
-    if (!target) return;
-    if (target.matches('#top-avatar, .top-right button') && !target.classList.contains('btn')) return;
-    triggerWardenFog();
-  }, { passive: true });
+  /*
+     The cinematic interaction fog is intentionally desktop-only.
+     On touch devices the CSS already uses a static environment,
+     and skipping these scroll/click effects removes a frequent
+     source of mobile frame drops.
+  */
+  const gwDesktopEffects =
+    window.matchMedia('(min-width: 761px) and (hover: hover) and (pointer: fine)').matches &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // While scrolling, a lower mist layer rolls across the field. A stronger sweep
-  // fires occasionally so the effect is noticeable without becoming annoying.
-  window.addEventListener('scroll', () => {
-    document.body.classList.add('gw-scrolling');
-    clearTimeout(gwScrollTimer);
-    gwScrollTimer = setTimeout(() => document.body.classList.remove('gw-scrolling'), 520);
+  if (gwDesktopEffects) {
 
-    const now = performance.now();
-    const delta = Math.abs((window.scrollY || 0) - gwLastScroll);
-    if (delta > 140 && now - gwLastScrollFog > 850) {
+    // Tabs and meaningful dashboard actions get a short cinematic mist sweep.
+    document.addEventListener('click', (event) => {
+      const target = event.target.closest('.tab-btn, .btn, .admin-lb-name, [data-action], button');
+      if (!target) return;
+      if (target.matches('#top-avatar, .top-right button') && !target.classList.contains('btn')) return;
       triggerWardenFog();
-      gwLastScrollFog = now;
-    }
-    gwLastScroll = window.scrollY || 0;
-  }, { passive: true });
+    }, { passive: true });
+
+    // Desktop scrolling can use the cinematic mist without affecting
+    // touch scrolling performance.
+    window.addEventListener('scroll', () => {
+      document.body.classList.add('gw-scrolling');
+      clearTimeout(gwScrollTimer);
+      gwScrollTimer = setTimeout(() => document.body.classList.remove('gw-scrolling'), 520);
+
+      const now = performance.now();
+      const delta = Math.abs((window.scrollY || 0) - gwLastScroll);
+      if (delta > 140 && now - gwLastScrollFog > 850) {
+        triggerWardenFog();
+        gwLastScrollFog = now;
+      }
+      gwLastScroll = window.scrollY || 0;
+    }, { passive: true });
+
+  }
 
 
 })();
