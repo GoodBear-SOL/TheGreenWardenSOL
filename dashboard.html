@@ -713,6 +713,41 @@ h1,h2,h3{
    ADMIN REVIEW
    ========================================================= */
 
+/* Admin-only dashboard mode */
+body.admin-mode .participant-only{
+  display:none !important;
+}
+
+body.admin-mode .admin-only-nav{
+  display:none !important;
+}
+
+body.admin-mode #tab-home{
+  display:block;
+}
+
+body.admin-mode .admin-review{
+  margin-top:0;
+}
+
+.admin-mode-badge{
+  display:none;
+  margin:0 0 18px;
+  padding:10px 14px;
+  border:1px solid rgba(94,235,143,.28);
+  border-radius:12px;
+  background:rgba(31,107,66,.16);
+  color:#c8f7d7;
+  font-family:'JetBrains Mono',monospace;
+  font-size:12px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+
+body.admin-mode .admin-mode-badge{
+  display:block;
+}
+
 .admin-review{
   display:none;
   margin-top:28px;
@@ -1895,7 +1930,7 @@ footer .disclaimer{
     </button>
 
     <button
-      class="tab-btn"
+      class="tab-btn participant-only"
       role="tab"
       data-tab="leaderboard"
       aria-selected="false">
@@ -1919,7 +1954,7 @@ footer .disclaimer{
     </button>
 
     <button
-      class="tab-btn"
+      class="tab-btn participant-only"
       role="tab"
       data-tab="profile"
       aria-selected="false">
@@ -1970,7 +2005,7 @@ footer .disclaimer{
 
   </div>
 
-  <div class="stats">
+  <div class="stats participant-only">
 
     <div class="stat wp">
 
@@ -2031,7 +2066,7 @@ footer .disclaimer{
        COMPACT CHECK-IN STRIP
        ======================================================= -->
 
-  <div class="checkin-strip">
+  <div class="checkin-strip participant-only">
 
     <button
       class="btn primary small"
@@ -2069,7 +2104,7 @@ footer .disclaimer{
   <div class="dash-grid">
 
     <!-- Rank / sword panel -->
-    <div class="rank-card">
+    <div class="rank-card participant-only">
 
       <div
         class="sword-wrap"
@@ -2131,7 +2166,7 @@ footer .disclaimer{
     </div>
 
     <!-- Social tasks panel -->
-    <div class="tasks-card">
+    <div class="tasks-card participant-only">
 
       <h2 class="ci-title">
         Warden Tasks
@@ -2160,6 +2195,8 @@ footer .disclaimer{
        ADMIN REVIEW PANEL
        Visible only to authorized Green Warden admins.
        ======================================================= -->
+
+  <div class="admin-mode-badge">🛡 Admin workspace · Engagement review</div>
 
   <section
     class="admin-review"
@@ -2235,7 +2272,7 @@ footer .disclaimer{
      ========================================================= -->
 
 <section
-  class="tab-panel"
+  class="tab-panel participant-only"
   id="tab-leaderboard"
   role="tabpanel">
 
@@ -2635,7 +2672,7 @@ footer .disclaimer{
      ========================================================= -->
 
 <section
-  class="tab-panel"
+  class="tab-panel participant-only"
   id="tab-profile"
   role="tabpanel">
 
@@ -4677,6 +4714,11 @@ footer .disclaimer{
       'visible',
       !!show
     );
+
+    document.body.classList.toggle(
+      'admin-mode',
+      !!show
+    );
   }
 
   function renderAdminReviews(){
@@ -4932,15 +4974,6 @@ footer .disclaimer{
       claim.google_name ||
       claim.username ||
       'this user';
-
-    const question =
-      action === 'approve'
-        ? 'Approve ' + userName + ' and award ' + fmt(claim.wp_reward || 0) + ' WP?'
-        : 'Reject the proof submitted by ' + userName + '?';
-
-    if(!window.confirm(question)){
-      return;
-    }
 
     adminRefreshBusy = true;
 
