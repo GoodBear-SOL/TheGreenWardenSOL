@@ -883,6 +883,103 @@ body.admin-mode .admin-mode-badge{
   }
 }
 
+
+/* =========================================================
+   ADMIN LEADERBOARD / PROFILE
+   ========================================================= */
+.admin-lb-name{
+  border:0;
+  background:transparent;
+  color:var(--parchment);
+  padding:0;
+  margin:0;
+  font:inherit;
+  font-weight:700;
+  cursor:pointer;
+  text-align:left;
+}
+.admin-lb-name:hover{
+  color:var(--flame);
+  text-decoration:underline;
+}
+.admin-profile-overlay{
+  position:fixed;
+  inset:0;
+  z-index:9999;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+  background:rgba(0,0,0,.72);
+  backdrop-filter:blur(6px);
+}
+.admin-profile-overlay.visible{
+  display:flex;
+}
+.admin-profile-card{
+  width:min(620px,100%);
+  max-height:90vh;
+  overflow:auto;
+  border:1px solid var(--gold-soft);
+  background:var(--panel);
+  box-shadow:0 24px 80px rgba(0,0,0,.45);
+  padding:30px;
+}
+.admin-profile-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+}
+.admin-profile-title{
+  margin:0;
+  font-family:'Cinzel',serif;
+  color:var(--parchment);
+  font-size:1.55rem;
+}
+.admin-profile-sub{
+  margin:5px 0 0;
+  color:var(--ink-dim);
+  font-family:'JetBrains Mono',monospace;
+  font-size:.75rem;
+}
+.admin-profile-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin-top:24px;
+}
+.admin-profile-stat{
+  border:1px solid var(--line);
+  background:rgba(5,13,9,.45);
+  padding:16px;
+}
+.admin-profile-stat .k{
+  color:var(--ink-dim);
+  font-family:'JetBrains Mono',monospace;
+  font-size:.68rem;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.admin-profile-stat .v{
+  margin-top:6px;
+  color:var(--parchment);
+  font-weight:700;
+  word-break:break-word;
+}
+.admin-profile-loading{
+  padding:30px 0;
+  color:var(--ink-dim);
+}
+@media(max-width:600px){
+  .admin-profile-grid{
+    grid-template-columns:1fr;
+  }
+  .admin-profile-card{
+    padding:22px;
+  }
+}
+
 /* =========================================================
    WARDEN AWAKENING SWORD
    Stable / stationary version
@@ -1930,7 +2027,7 @@ footer .disclaimer{
     </button>
 
     <button
-      class="tab-btn participant-only"
+      class="tab-btn"
       role="tab"
       data-tab="leaderboard"
       aria-selected="false">
@@ -1976,6 +2073,7 @@ footer .disclaimer{
   id="tab-home"
   role="tabpanel">
 
+  <div class="participant-only">
   <span class="eyebrow">
     Welcome back
   </span>
@@ -2003,6 +2101,7 @@ footer .disclaimer{
       Set Warden name
     </button>
 
+  </div>
   </div>
 
   <div class="stats participant-only">
@@ -2241,29 +2340,31 @@ footer .disclaimer{
 
   </section>
 
-  <div class="cal-head">
+  <div class="participant-only">
+    <div class="cal-head">
 
-    <h2>
-      7-day rewards
-    </h2>
+      <h2>
+        7-day rewards
+      </h2>
 
-    <span>
-      Resets every day at 12:00PM EDT
-    </span>
+      <span>
+        Resets every day at 12:00PM EDT
+      </span>
 
+    </div>
+
+    <div
+      class="cal"
+      id="cal">
+    </div>
+
+    <p class="rules">
+      Check in every day to move up the reward ladder.
+      Miss a day and your reward goes back to Day 1 (+5 WP).
+      Keep going without missing and after Day 7 the ladder starts again,
+      while your day streak keeps growing.
+    </p>
   </div>
-
-  <div
-    class="cal"
-    id="cal">
-  </div>
-
-  <p class="rules">
-    Check in every day to move up the reward ladder.
-    Miss a day and your reward goes back to Day 1 (+5 WP).
-    Keep going without missing and after Day 7 the ladder starts again,
-    while your day streak keeps growing.
-  </p>
 
 </section>
 
@@ -2272,7 +2373,7 @@ footer .disclaimer{
      ========================================================= -->
 
 <section
-  class="tab-panel participant-only"
+  class="tab-panel"
   id="tab-leaderboard"
   role="tabpanel">
 
@@ -2874,6 +2975,29 @@ footer .disclaimer{
   </p>
 </footer>
 
+
+<div
+  class="admin-profile-overlay"
+  id="admin-profile-overlay"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="admin-profile-title">
+
+  <div class="admin-profile-card">
+    <div class="admin-profile-head">
+      <div>
+        <h2 class="admin-profile-title" id="admin-profile-title">Warden Profile</h2>
+        <p class="admin-profile-sub" id="admin-profile-sub">Loading profile…</p>
+      </div>
+      <button class="btn small" id="admin-profile-close" type="button">Close</button>
+    </div>
+
+    <div id="admin-profile-body">
+      <div class="admin-profile-loading">Loading profile…</div>
+    </div>
+  </div>
+</div>
+
 <div
   id="toast"
   role="status"
@@ -3408,6 +3532,10 @@ footer .disclaimer{
 
   let adminRefreshBusy = false;
 
+  let isAdmin = false;
+
+  let adminLeaderboardLoaded = false;
+
   const email =
     (
       session.user &&
@@ -3518,6 +3646,8 @@ footer .disclaimer{
       Date.now();
 
     renderAll();
+
+    adminLeaderboardLoaded = false;
 
     /*
       Admin review is loaded separately. Non-admin users receive
@@ -4933,6 +5063,7 @@ footer .disclaimer{
           ? data.claims
           : [];
 
+      isAdmin = true;
       showAdminReviewPanel(true);
       renderAdminReviews();
 
@@ -4940,6 +5071,7 @@ footer .disclaimer{
 
       /* Non-admin users simply do not see the admin panel. */
       adminReviews = [];
+      isAdmin = false;
       showAdminReviewPanel(false);
     }
   }
@@ -5150,13 +5282,23 @@ footer .disclaimer{
     }
 
     const name =
-      el(
-        'div',
-        {
-          class:'nm'
-        },
-        r.display
-      );
+      isAdmin && r.user_id
+        ? el(
+            'button',
+            {
+              class:'admin-lb-name',
+              type:'button',
+              'data-admin-profile':r.user_id,
+              text:r.display
+            }
+          )
+        : el(
+            'div',
+            {
+              class:'nm'
+            },
+            r.display
+          );
 
     if(r.me){
 
@@ -5296,47 +5438,74 @@ footer .disclaimer{
         data,
         error
       } =
-        await sb.rpc(
-          'get_leaderboard',
-          {
-            p_limit:50
-          }
-        );
+        isAdmin
+          ? await sb.rpc(
+              'get_admin_leaderboard'
+            )
+          : await sb.rpc(
+              'get_leaderboard',
+              {
+                p_limit:50
+              }
+            );
 
       if(error){
         throw error;
       }
 
+      const sourceRows =
+        isAdmin
+          ? ((data && data.profiles) || [])
+          : (data || []);
+
       const rows =
-        (data || [])
+        sourceRows
           .map(
-            r => ({
+            (r,index) => ({
 
               pos:
-                Number(r.pos),
+                isAdmin
+                  ? index + 1
+                  : Number(r.pos),
+
+              user_id:
+                isAdmin
+                  ? r.user_id
+                  : null,
 
               display:
-                r.display,
+                isAdmin
+                  ? (r.username || r.google_name || 'Warden')
+                  : r.display,
 
               avatar:
-                r.avatar,
+                isAdmin
+                  ? null
+                  : r.avatar,
 
               x_handle:
-                r.x_handle,
+                isAdmin
+                  ? (r.x_username || '')
+                  : r.x_handle,
 
               points:
-                Number(r.points),
+                isAdmin
+                  ? Number(r.wp || 0)
+                  : Number(r.points),
 
               day_streak:
-                Number(
-                  r.day_streak
-                ),
+                isAdmin
+                  ? 0
+                  : Number(r.day_streak),
 
               me:
-                r.me
+                isAdmin
+                  ? r.user_id === (S && S.id)
+                  : r.me
 
             })
-          );
+          )
+          .filter(r => r.display);
 
       list.replaceChildren();
 
@@ -5425,6 +5594,10 @@ footer .disclaimer{
       lbLoaded =
         true;
 
+      if(isAdmin){
+        adminLeaderboardLoaded = true;
+      }
+
     }catch(e){
 
       console.error(
@@ -5452,6 +5625,103 @@ footer .disclaimer{
       'click',
       loadLeaderboard
     );
+
+  /* ---------- admin profile ---------- */
+
+  async function openAdminProfile(userId){
+
+    if(!isAdmin || !userId){
+      return;
+    }
+
+    const overlay = $('#admin-profile-overlay');
+    const body = $('#admin-profile-body');
+    const title = $('#admin-profile-title');
+    const sub = $('#admin-profile-sub');
+
+    if(!overlay || !body){
+      return;
+    }
+
+    overlay.classList.add('visible');
+    body.replaceChildren(
+      el('div',{class:'admin-profile-loading',text:'Loading profile…'})
+    );
+    title.textContent = 'Warden Profile';
+    sub.textContent = 'Loading profile…';
+
+    try{
+      const {data,error} = await sb.rpc(
+        'get_admin_profile',
+        {p_user_id:userId}
+      );
+
+      if(error) throw error;
+      if(!data || !data.ok || !data.profile){
+        throw new Error((data && data.error) || 'PROFILE_NOT_FOUND');
+      }
+
+      const p = data.profile;
+      const name = p.username || p.google_name || 'Warden';
+      const x = p.x_username ? '@' + p.x_username : 'Not linked';
+
+      title.textContent = name;
+      sub.textContent = p.google_name && p.google_name !== name
+        ? p.google_name
+        : 'Green Warden profile';
+
+      const grid = el('div',{class:'admin-profile-grid'});
+      [
+        ['Warden name', p.username || 'Not set'],
+        ['X username', x],
+        ['Warden Points', fmt(p.wp)],
+        ['Profile ID', p.user_id]
+      ].forEach(([k,v]) => {
+        grid.append(
+          el('div',{class:'admin-profile-stat'},
+            el('div',{class:'k',text:k}),
+            el('div',{class:'v',text:String(v)})
+          )
+        );
+      });
+
+      body.replaceChildren(grid);
+
+    }catch(e){
+      console.error('Admin profile error:',e);
+      body.replaceChildren(
+        el('div',{class:'admin-profile-error',text:'Could not load this Warden profile.'})
+      );
+    }
+  }
+
+  function closeAdminProfile(){
+    const overlay = $('#admin-profile-overlay');
+    if(overlay){
+      overlay.classList.remove('visible');
+    }
+  }
+
+  $('#admin-profile-close').addEventListener('click',closeAdminProfile);
+
+  $('#admin-profile-overlay').addEventListener('click',e => {
+    if(e.target.id === 'admin-profile-overlay'){
+      closeAdminProfile();
+    }
+  });
+
+  document.addEventListener('keydown',e => {
+    if(e.key === 'Escape'){
+      closeAdminProfile();
+    }
+  });
+
+  $('#lb-list').addEventListener('click',e => {
+    const profileButton = e.target.closest('[data-admin-profile]');
+    if(profileButton){
+      openAdminProfile(profileButton.dataset.adminProfile);
+    }
+  });
 
   /* ---------- profile ---------- */
 
