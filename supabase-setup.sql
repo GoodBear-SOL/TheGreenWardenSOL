@@ -1,17 +1,31 @@
 -- =========================================================
--- THE GREEN WARDEN — SOCIAL TASKS ADD-ON
+-- THE GREEN WARDEN — SOCIAL TASKS SYSTEM
 -- =========================================================
 -- Purpose:
---   Adds "Like the post" / "Share the post" tasks.
+--   Social engagement tasks with mandatory proof support.
 --
--- Requirements from existing Green Warden database:
+-- Requirements:
 --   public.profiles.id = auth user UUID
 --   public.profiles.wp = user's WP balance
 --
--- This version does NOT modify get_my_status().
--- It creates a separate get_task_board() function instead.
+-- This SQL:
+--   1. Creates/updates the task catalog
+--   2. Creates/updates task claims
+--   3. Requires proof when a task needs proof
+--   4. Prevents duplicate claims
+--   5. Validates submitted proof URLs
+--   6. Awards WP only after a valid claim is created
+--   7. Provides the dashboard task board
 --
--- Safe to re-run.
+-- IMPORTANT:
+--   Replace the two X URLs below with your ACTUAL X POST URLs.
+--
+-- Example:
+--   https://x.com/ThegoodbearSOL/status/1234567890123456789
+--
+-- Do NOT use only:
+--   https://x.com/ThegoodbearSOL
+--
 -- =========================================================
 
 
@@ -20,26 +34,26 @@
 -- =========================================================
 
 create table if not exists public.tasks (
-    id          text primary key,
-    label       text not null,
-    url         text not null,
-    wp_reward   integer not null check (wp_reward > 0),
-    needs_proof boolean not null default false,
-    active      boolean not null default true,
-    sort_order  integer not null default 0,
-    created_at  timestamptz not null default now()
+    id              text primary key,
+    label           text not null,
+    url             text not null,
+    wp_reward       integer not null check (wp_reward > 0),
+    needs_proof     boolean not null default false,
+    active          boolean not null default true,
+    sort_order      integer not null default 0,
+    created_at      timestamptz not null default now()
 );
 
 
--- Enable Row Level Security
+-- Enable RLS
 alter table public.tasks enable row level security;
 
 
--- Remove old policy if it exists
-drop policy if exists "tasks_read" on public.tasks;
+-- Recreate read policy safely
+drop policy if exists "tasks_read"
+on public.tasks;
 
 
--- Signed-in users can read tasks
 create policy "tasks_read"
 on public.tasks
 for select
@@ -48,94 +62,127 @@ using (true);
 
 
 -- =========================================================
--- 2. SEED SOCIAL TASKS
+-- 2. SOCIAL TASKS
 -- =========================================================
--- Change the URL below to your actual X post URL.
 --
--- Example:
--- https://x.com/ThegoodbearSOL/status/1234567890123456789
+-- IMPORTANT:
+-- Replace the URLs below before running this SQL.
 --
--- DO NOT use only your profile URL if the task is supposed
--- to be for a specific post.
+-- For the Like task, proof is mandatory as a self-report.
+-- A submitted X URL does NOT technically prove that the
+-- user clicked Like. It is stored for manual review.
+--
+-- If you want stronger proof for the first task, consider
+-- changing it later to "Like + Reply to the post" so the
+-- user can submit the URL of their own reply.
+--
 -- =========================================================
 
-insert into public.tasks
-    (id, label, url, wp_reward, needs_proof, sort_order)
+insert into public.tasks (
+    id,
+    label,
+    url,
+    wp_reward,
+    needs_proof,
+    active,
+    sort_order
+)
 values
-    (
-        'like-launch-post',
-        'Like the post',
-        'https://x.com/ThegoodbearSOL',
-        50,
-        false,
-        1
-    ),
-    (
-        'share-launch-post',
-        'Share the post',
-        'https://x.com/ThegoodbearSOL',
-        50,
-        true,
-        2
-    )
+(
+    'like-launch-post',
+    'Like the Green Warden post',
+    'REPLACE_WITH_YOUR_ACTUAL_X_POST_URL',
+    50,
+    true,
+    true,
+    1
+),
+(
+    'share-launch-post',
+    'Share the Green Warden post',
+    'REPLACE_WITH_YOUR_ACTUAL_X_POST_URL',
+    50,
+    true,
+    true,
+    2
+)
 on conflict (id) do update
 set
     label       = excluded.label,
     url         = excluded.url,
     wp_reward   = excluded.wp_reward,
     needs_proof = excluded.needs_proof,
+    active      = excluded.active,
     sort_order  = excluded.sort_order;
 
 
 -- =========================================================
 -- 3. TASK CLAIMS
 -- =========================================================
--- One claim per user per task.
--- The primary key prevents double claiming.
--- =========================================================
 
 create table if not exists public.task_claims (
-    user_id    uuid not null
+    user_id       uuid not null
         references auth.users(id)
         on delete cascade,
 
-    task_id    text not null
+    task_id       text not null
         references public.tasks(id)
         on delete cascade,
 
-    wp_awarded integer not null,
-    proof_url  text,
-    claimed_at timestamptz not null default now(),
+    wp_awarded    integer not null,
+    proof_url     text,
+    claimed_at    timestamptz not null default now(),
 
     primary key (user_id, task_id)
 );
 
 
--- Enable Row Level Security
+-- Enable RLS
 alter table public.task_claims enable row level security;
 
 
--- Remove old policy if it exists
+-- Recreate user's own claims policy
 drop policy if exists "task_claims_read_own"
 on public.task_claims;
 
 
--- Users can see only their own claims
 create policy "task_claims_read_own"
 on public.task_claims
 for select
 to authenticated
-using (user_id = auth.uid());
+using (
+    user_id = auth.uid()
+);
 
 
 -- IMPORTANT:
 -- There is intentionally NO INSERT policy.
--- Users cannot directly insert claims from the browser.
+--
+-- Users cannot directly insert task claims from the browser.
 -- Claims must go through claim_task().
+--
 
 
 -- =========================================================
 -- 4. CLAIM TASK FUNCTION
+-- =========================================================
+--
+-- Security improvements:
+--
+--   • Requires authentication
+--   • Requires an existing profile
+--   • Requires an active task
+--   • Prevents duplicate claims
+--   • Requires proof when needs_proof = true
+--   • Rejects obviously invalid proof URLs
+--   • Accepts only HTTP/HTTPS proof URLs
+--   • For X tasks, requires an X/Twitter URL
+--
+-- IMPORTANT:
+--   This does NOT automatically verify that the user actually
+--   performed the action on X.
+--   It only requires the user to submit proof.
+--
 -- =========================================================
 
 create or replace function public.claim_task(
@@ -148,28 +195,31 @@ security definer
 set search_path = public
 as $$
 declare
-    v_uid       uuid;
-    v_task      public.tasks%rowtype;
-    v_wp_award  integer;
-    v_profile_exists boolean;
+    v_uid               uuid;
+    v_task              public.tasks%rowtype;
+    v_wp_award          integer;
+    v_profile_exists    boolean;
+    v_proof             text;
 begin
 
     -- -----------------------------------------------------
-    -- Identify logged-in user
+    -- 1. Identify logged-in user
     -- -----------------------------------------------------
 
     v_uid := auth.uid();
 
     if v_uid is null then
+
         return jsonb_build_object(
             'ok', false,
             'error', 'NOT_AUTHENTICATED'
         );
+
     end if;
 
 
     -- -----------------------------------------------------
-    -- Verify that the user's profile exists
+    -- 2. Verify profile exists
     -- -----------------------------------------------------
 
     select exists (
@@ -179,16 +229,19 @@ begin
     )
     into v_profile_exists;
 
+
     if not v_profile_exists then
+
         return jsonb_build_object(
             'ok', false,
             'error', 'PROFILE_NOT_FOUND'
         );
+
     end if;
 
 
     -- -----------------------------------------------------
-    -- Find task
+    -- 3. Find task
     -- -----------------------------------------------------
 
     select *
@@ -198,22 +251,26 @@ begin
 
 
     if not found then
+
         return jsonb_build_object(
             'ok', false,
             'error', 'UNKNOWN_TASK'
         );
+
     end if;
 
 
     -- -----------------------------------------------------
-    -- Check whether task is active
+    -- 4. Check task status
     -- -----------------------------------------------------
 
     if not v_task.active then
+
         return jsonb_build_object(
             'ok', false,
             'error', 'TASK_INACTIVE'
         );
+
     end if;
 
 
@@ -221,10 +278,84 @@ begin
 
 
     -- -----------------------------------------------------
-    -- Create claim
+    -- 5. Clean proof URL
+    -- -----------------------------------------------------
+
+    v_proof := nullif(
+        trim(coalesce(p_proof_url, '')),
+        ''
+    );
+
+
+    -- -----------------------------------------------------
+    -- 6. Require proof when configured
+    -- -----------------------------------------------------
+
+    if v_task.needs_proof = true
+       and v_proof is null then
+
+        return jsonb_build_object(
+            'ok', false,
+            'error', 'PROOF_REQUIRED'
+        );
+
+    end if;
+
+
+    -- -----------------------------------------------------
+    -- 7. Validate proof URL format
+    -- -----------------------------------------------------
     --
-    -- The primary key (user_id, task_id) guarantees that
-    -- the same user cannot claim the same task twice.
+    -- Only HTTP/HTTPS URLs are accepted.
+    --
+
+    if v_proof is not null then
+
+        if v_proof !~* '^https?://'
+        then
+
+            return jsonb_build_object(
+                'ok', false,
+                'error', 'INVALID_PROOF_URL'
+            );
+
+        end if;
+
+    end if;
+
+
+    -- -----------------------------------------------------
+    -- 8. X-specific proof validation
+    -- -----------------------------------------------------
+    --
+    -- Social tasks currently use X.
+    --
+    -- We accept:
+    --   x.com
+    --   www.x.com
+    --   twitter.com
+    --   www.twitter.com
+    --
+    -- This does NOT verify the action itself.
+    --
+
+    if v_task.needs_proof = true then
+
+        if v_proof !~* '^https?://(www\.)?(x\.com|twitter\.com)/'
+        then
+
+            return jsonb_build_object(
+                'ok', false,
+                'error', 'INVALID_X_PROOF_URL'
+            );
+
+        end if;
+
+    end if;
+
+
+    -- -----------------------------------------------------
+    -- 9. Prevent duplicate claim
     -- -----------------------------------------------------
 
     begin
@@ -239,7 +370,7 @@ begin
             v_uid,
             p_task_id,
             v_wp_award,
-            nullif(trim(p_proof_url), '')
+            v_proof
         );
 
     exception
@@ -254,7 +385,7 @@ begin
 
 
     -- -----------------------------------------------------
-    -- Award WP
+    -- 10. Award WP
     -- -----------------------------------------------------
 
     update public.profiles
@@ -263,37 +394,32 @@ begin
 
 
     -- -----------------------------------------------------
-    -- Return success
+    -- 11. Return success
     -- -----------------------------------------------------
 
     return jsonb_build_object(
         'ok', true,
         'task_id', p_task_id,
-        'wp_awarded', v_wp_award
+        'wp_awarded', v_wp_award,
+        'proof_submitted', (v_proof is not null)
     );
+
 
 end;
 $$;
 
 
--- Allow signed-in users to call the function
+-- =========================================================
+-- 5. FUNCTION PERMISSION
+-- =========================================================
+
 grant execute
 on function public.claim_task(text, text)
 to authenticated;
 
 
 -- =========================================================
--- 5. TASK BOARD FUNCTION
--- =========================================================
--- Instead of modifying your existing get_my_status(),
--- this gives the dashboard a dedicated function for tasks.
---
--- It returns:
---
--- {
---   "tasks": [...],
---   "task_claims": [...]
--- }
+-- 6. TASK BOARD FUNCTION
 -- =========================================================
 
 create or replace function public.get_task_board()
@@ -306,21 +432,39 @@ declare
     v_uid uuid;
 begin
 
+    -- -----------------------------------------------------
+    -- Identify user
+    -- -----------------------------------------------------
+
     v_uid := auth.uid();
 
+
     if v_uid is null then
+
         return jsonb_build_object(
             'ok', false,
             'error', 'NOT_AUTHENTICATED'
         );
+
     end if;
 
 
+    -- -----------------------------------------------------
+    -- Return task board
+    -- -----------------------------------------------------
+
     return jsonb_build_object(
 
-        'ok', true,
+        'ok',
+        true,
+
+
+        -- -------------------------------------------------
+        -- ACTIVE TASKS
+        -- -------------------------------------------------
 
         'tasks',
+
         (
             select coalesce(
                 jsonb_agg(
@@ -335,11 +479,19 @@ begin
                 ),
                 '[]'::jsonb
             )
+
             from public.tasks t
+
             where t.active = true
         ),
 
+
+        -- -------------------------------------------------
+        -- USER CLAIMS
+        -- -------------------------------------------------
+
         'task_claims',
+
         (
             select coalesce(
                 jsonb_agg(
@@ -352,7 +504,9 @@ begin
                 ),
                 '[]'::jsonb
             )
+
             from public.task_claims c
+
             where c.user_id = v_uid
         )
 
@@ -362,42 +516,45 @@ end;
 $$;
 
 
--- Allow signed-in users to call the task board
+-- =========================================================
+-- 7. FUNCTION PERMISSION
+-- =========================================================
+
 grant execute
 on function public.get_task_board()
 to authenticated;
 
 
 -- =========================================================
--- 6. OPTIONAL ADMIN VIEW
+-- 8. ADMIN REVIEW QUERY
 -- =========================================================
--- This does NOT expose the view to normal users.
--- You can run the SELECT manually in Supabase SQL Editor
--- when you want to review claims.
+--
+-- DO NOT create this as a public view.
+--
+-- Run this manually in Supabase SQL Editor when you want
+-- to inspect submitted proofs.
+--
 -- =========================================================
 
--- Example:
---
--- select
+-- SELECT
 --     tc.claimed_at,
 --     tc.user_id,
 --     p.username,
 --     p.google_name,
+--     t.id AS task_id,
 --     t.label,
 --     tc.wp_awarded,
 --     tc.proof_url
--- from public.task_claims tc
--- join public.tasks t
---     on t.id = tc.task_id
--- left join public.profiles p
---     on p.id = tc.user_id
--- order by tc.claimed_at desc;
+-- FROM public.task_claims tc
+-- JOIN public.tasks t
+--     ON t.id = tc.task_id
+-- LEFT JOIN public.profiles p
+--     ON p.id = tc.user_id
+-- ORDER BY tc.claimed_at DESC;
 
 
 -- =========================================================
--- 7. VERIFY INSTALLATION
--- =========================================================
--- These queries should return your new tables/functions.
+-- 9. VERIFY TASK CATALOG
 -- =========================================================
 
 select
@@ -412,6 +569,10 @@ from public.tasks
 order by sort_order;
 
 
+-- =========================================================
+-- 10. VERIFY FUNCTIONS
+-- =========================================================
+
 select
     routine_name
 from information_schema.routines
@@ -421,3 +582,17 @@ and routine_name in (
     'get_task_board'
 )
 order by routine_name;
+
+
+-- =========================================================
+-- 11. VERIFY CLAIM TABLE
+-- =========================================================
+
+select
+    column_name,
+    data_type,
+    is_nullable
+from information_schema.columns
+where table_schema = 'public'
+and table_name = 'task_claims'
+order by ordinal_position;
