@@ -91,7 +91,7 @@ values
 (
     'like-launch-post',
     'Like the Green Warden post',
-    'REPLACE_WITH_YOUR_ACTUAL_X_POST_URL',
+    'https://x.com/GreenWardenSol/status/2102614430681022855?s=20',
     50,
     true,
     true,
@@ -100,7 +100,7 @@ values
 (
     'share-launch-post',
     'Share the Green Warden post',
-    'REPLACE_WITH_YOUR_ACTUAL_X_POST_URL',
+    'https://x.com/GreenWardenSol/status/2102614430681022855?s=20',
     50,
     true,
     true,
