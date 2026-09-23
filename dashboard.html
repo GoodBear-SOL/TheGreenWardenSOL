@@ -2090,8 +2090,7 @@ footer .disclaimer{
     hidden>
 
     <span>
-      You're showing as your Google name.
-      Pick a Warden name for the leaderboard.
+      Pick a Warden name.
     </span>
 
     <button
@@ -2273,7 +2272,6 @@ footer .disclaimer{
 
       <p class="ci-sub">
         Complete each task on X, then submit your proof link for manual review.
-        WP is awarded only after your submission has been verified and approved.
       </p>
 
       <div
@@ -2282,8 +2280,7 @@ footer .disclaimer{
       </div>
 
       <p class="tasks-note">
-        Social tasks require proof and manual verification. Opening the X link does not submit a claim and does not award WP.
-        WP is awarded only after your proof is approved.
+        Social tasks require proof and manual verification. WP is awarded only after your proof is approved.
       </p>
 
     </div>
@@ -2876,7 +2873,7 @@ footer .disclaimer{
         </div>
 
         <p class="hint">
-          Optional. It shows next to your name on the leaderboard.
+          It shows next to your name on the leaderboard.
           Adding it for the first time earns +5 WP.
         </p>
 
@@ -2895,13 +2892,11 @@ footer .disclaimer{
           autocomplete="off"
           autocapitalize="off"
           spellcheck="false"
-          placeholder="Enter your Solana public address">
+          placeholder="Enter your Solana address">
 
         <p class="hint">
-          Optional. Enter your Solana <strong>public address only</strong>.
-          Never enter a seed phrase or private key.
-          This is a manual entry field — no wallet connection is required.
-          Saving an address for the first time earns +5 WP.
+          <strong> Never enter a seed phrase or private key.</strong>.
+          No wallet connection is required. Saving an address for the first time earns +5 WP.
         </p>
 
       </div>
@@ -4350,7 +4345,7 @@ footer .disclaimer{
 
     if(status === 'pending'){
 
-      return 'Pending manual review — WP has not been awarded yet.';
+      return 'Pending manual review';
     }
 
     if(status === 'rejected'){
@@ -4358,7 +4353,7 @@ footer .disclaimer{
       return 'Rejected — check your proof and resubmit.';
     }
 
-    return 'Complete the task, paste your X proof link, then submit for manual review.';
+    return 'For manual review.';
   }
 
   function renderTasks(){
@@ -4510,7 +4505,7 @@ footer .disclaimer{
             {
               type:'url',
               placeholder:
-                'Paste the public X link to your reply or quote post',
+                'Paste the public X link',
               value:
                 claim && claim.proof_url
                   ? claim.proof_url
@@ -4635,7 +4630,7 @@ footer .disclaimer{
               'task-status bad';
 
             status.textContent =
-              'Please enter a valid public X or Twitter URL.';
+              'Enter a valid public X or Twitter URL.';
           }
         }
       }
@@ -4662,11 +4657,11 @@ footer .disclaimer{
           'task-status bad';
 
         status.textContent =
-          'Please paste a valid public X or Twitter proof link.';
+          'Paste a valid public X or Twitter proof link.';
       }
 
       toast(
-        'Please paste your X proof link before submitting.',
+        'Paste your X proof link',
         true
       );
 
@@ -4726,7 +4721,7 @@ footer .disclaimer{
             'Please provide a valid proof URL.',
 
           INVALID_X_PROOF_URL:
-            'Please provide a public X or Twitter proof URL.',
+            'Provide a public X or Twitter proof URL.',
 
           UNKNOWN_TASK:
             'This task is no longer available.',
@@ -5908,7 +5903,7 @@ footer .disclaimer{
         ){
 
           return setMsg(
-            'That does not look like a valid Solana public address.',
+            'That does not look like a valid Solana address.',
             'bad'
           );
 
@@ -5956,7 +5951,7 @@ footer .disclaimer{
                 'That X username doesn\'t look right.',
 
               INVALID_WALLET:
-                'That does not look like a valid Solana public address.'
+                'That does not look like a valid Solana address.'
 
             };
 
