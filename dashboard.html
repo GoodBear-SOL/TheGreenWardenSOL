@@ -3585,7 +3585,7 @@ html{
   const SWORD_RANKS = [
     {
       min:0,
-      max:3000,
+      max:200,
       name:'Novice',
       awakening:'Awakening I',
       image:'assets/Sword-Novice-1.png',
@@ -3593,8 +3593,8 @@ html{
     },
 
     {
-      min:3001,
-      max:7000,
+      min:201,
+      max:400,
       name:'Apprentice',
       awakening:'Awakening II',
       image:'assets/Sword-Apprentice-2.png',
@@ -3602,8 +3602,8 @@ html{
     },
 
     {
-      min:7001,
-      max:12000,
+      min:401,
+      max:600,
       name:'Journeyman',
       awakening:'Awakening III',
       image:'assets/Sword-Journeyman-3.png',
@@ -3611,8 +3611,8 @@ html{
     },
 
     {
-      min:12001,
-      max:18000,
+      min:601,
+      max:1000,
       name:'Veteran',
       awakening:'Awakening IV',
       image:'assets/Sword-Veteran-4.png',
@@ -3620,8 +3620,8 @@ html{
     },
 
     {
-      min:18001,
-      max:25000,
+      min:1001,
+      max:2000,
       name:'Elite',
       awakening:'Awakening V',
       image:'assets/Sword-Elite-5.png',
@@ -3629,8 +3629,8 @@ html{
     },
 
     {
-      min:25001,
-      max:50000,
+      min:2001,
+      max:5000,
       name:'Legendary',
       awakening:'Awakening VI',
       image:'assets/Sword-Legendary-6.png',
@@ -3638,7 +3638,7 @@ html{
     },
 
     {
-      min:50001,
+      min:5001,
       max:Infinity,
       name:'Divine',
       awakening:'Awakening VII',
@@ -4076,6 +4076,59 @@ html{
     ) ||
     'Warden';
 
+  /* ---------- referral qualification ---------- */
+
+  async function tryQualifyReferral(){
+
+    if(!session || !session.user || !session.user.id){
+      return;
+    }
+
+    try{
+
+      const {
+        data,
+        error
+      } =
+        await sb.rpc(
+          'qualify_referral',
+          {
+            p_referred_user: session.user.id
+          }
+        );
+
+      if(error){
+        console.warn(
+          'Referral qualification check failed:',
+          error
+        );
+        return;
+      }
+
+      /*
+        The reward belongs to the referrer, not the referred Warden.
+        Keep this check silent so qualification never interrupts the
+        normal dashboard/check-in experience.
+      */
+      if(data && data.rewarded){
+        console.log(
+          'Referral became active. Referrer received +200 WP.',
+          data
+        );
+      }
+
+    }catch(e){
+
+      /* Referral qualification is supplemental and must never break
+         the main dashboard. */
+      console.warn(
+        'Referral qualification error:',
+        e
+      );
+
+    }
+  }
+
   /* ---------- load status ---------- */
 
   async function loadStatus(){
@@ -4170,6 +4223,10 @@ html{
       Date.now();
 
     renderAll();
+
+    /* Check whether this Warden has now qualified their referral.
+       The server-side function enforces the 7-day + 3-check-in rules. */
+    await tryQualifyReferral();
 
     adminLeaderboardLoaded = false;
 
@@ -4793,17 +4850,17 @@ html{
   */
   const FALLBACK_TASKS = [
     {
-      id:'Join-the-group',
-      label:'Like the Green Warden post',
-      url:'https://x.com/GreenWardenSol/status/2103126914080919671?s=20',
+      id:'like-launch-post',
+      label:'Like + Reply to the Green Warden post',
+      url:'https://x.com/GreenWardenSol/status/2102614430681022855?s=20',
       wp_reward:50,
       needs_proof:true
     },
     {
       id:'share-launch-post',
       label:'Quote/Share the Green Warden post',
-      url:'https://x.com/GreenWardenSol/status/2103126914080919671?s=20',
-      wp_reward:100,
+      url:'https://x.com/GreenWardenSol/status/2102614430681022855?s=20',
+      wp_reward:50,
       needs_proof:true
     }
   ];
