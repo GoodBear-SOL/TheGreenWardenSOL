@@ -1,1124 +1,1041 @@
--- ============================================================
--- THE GREEN WARDEN
--- SOCIAL TASK + MANUAL VERIFICATION SYSTEM
--- ============================================================
---
--- FLOW:
---
---   User opens X task
---          ↓
---   User completes the task
---          ↓
---   User pastes proof URL
---          ↓
---   Submit for Review
---          ↓
---   status = pending
---          ↓
---   ADMIN manually checks X
---          ↓
---   APPROVE
---          ↓
---   WP is awarded
---
--- WP IS NOT AWARDED WHEN THE USER SUBMITS PROOF.
---
--- Existing task claims are preserved as APPROVED because
--- the old system already awarded their WP.
---
--- Requirements:
---
---   public.profiles.id = auth user UUID
---   public.profiles.wp = user's WP balance
---
--- ============================================================
-
-
-begin;
-
-
--- ============================================================
--- 1. TASK CATALOG
--- ============================================================
-
-create table if not exists public.tasks (
-    id              text primary key,
-    label           text not null,
-    url             text not null,
-    wp_reward       integer not null check (wp_reward > 0),
-    needs_proof     boolean not null default false,
-    active          boolean not null default true,
-    sort_order      integer not null default 0,
-    created_at      timestamptz not null default now()
-);
-
-
--- Enable RLS
-alter table public.tasks enable row level security;
-
-
--- Recreate read policy
-drop policy if exists "tasks_read"
-on public.tasks;
-
-
-create policy "tasks_read"
-on public.tasks
-for select
-to authenticated
-using (true);
-
-
--- ============================================================
--- 2. SOCIAL TASKS
--- ============================================================
---
--- The first task is Like + Reply.
---
--- Why?
---
--- A Like by itself does not provide a reliable public URL
--- that you can use to manually verify the user performed it.
---
--- A Reply DOES provide a public X URL.
---
--- The second task uses Quote/Share so the user can submit
--- the public URL of their quote post.
---
--- ============================================================
-
-
-insert into public.tasks (
-    id,
-    label,
-    url,
-    wp_reward,
-    needs_proof,
-    active,
-    sort_order
-)
-values
-
-(
-    'like-launch-post',
-    'Like + Reply to the Green Warden post',
-    'https://x.com/GreenWardenSol/status/2102614430681022855?s=20',
-    50,
-    true,
-    true,
-    1
-),
-
-(
-    'share-launch-post',
-    'Quote/Share the Green Warden post',
-    'https://x.com/GreenWardenSol/status/2102614430681022855?s=20',
-    50,
-    true,
-    true,
-    2
-)
-
-on conflict (id) do update
-set
-    label       = excluded.label,
-    url         = excluded.url,
-    wp_reward   = excluded.wp_reward,
-    needs_proof = excluded.needs_proof,
-    active      = excluded.active,
-    sort_order  = excluded.sort_order;
-
-
--- ============================================================
--- 3. REMOVE OLD CLAIM FUNCTION
--- ============================================================
---
--- IMPORTANT:
---
--- Your previous claim_task() function immediately awarded WP.
---
--- We must remove it so nobody can bypass manual verification.
---
--- ============================================================
-
-
-revoke all
-on function public.claim_task(text, text)
-from public;
-
-revoke all
-on function public.claim_task(text, text)
-from anon;
-
-revoke all
-on function public.claim_task(text, text)
-from authenticated;
-
-
-drop function if exists public.claim_task(text, text);
-
-
--- ============================================================
--- 4. TASK CLAIMS TABLE
--- ============================================================
-
-
-create table if not exists public.task_claims (
-    user_id       uuid not null
-        references auth.users(id)
-        on delete cascade,
-
-    task_id       text not null
-        references public.tasks(id)
-        on delete cascade,
-
-    wp_awarded    integer not null default 0,
-
-    proof_url     text,
-
-    claimed_at    timestamptz not null default now(),
-
-    primary key (user_id, task_id)
-);
-
-
--- Enable RLS
-alter table public.task_claims enable row level security;
-
-
--- ============================================================
--- 5. ADD REVIEW STATUS
--- ============================================================
-
-
-alter table public.task_claims
-add column if not exists status text;
-
-
-alter table public.task_claims
-add column if not exists reviewed_at timestamptz;
-
-
-alter table public.task_claims
-add column if not exists reviewed_by uuid;
-
-
--- ============================================================
--- 6. PRESERVE EXISTING CLAIMS
--- ============================================================
---
--- Existing claims came from the old system.
---
--- Since the old system already awarded their WP, mark them
--- as approved so they remain valid.
---
--- ============================================================
-
-
-update public.task_claims
-set status = 'approved'
-where status is null;
-
-
--- ============================================================
--- 7. DEFAULT STATUS
--- ============================================================
-
-
-alter table public.task_claims
-alter column status set default 'pending';
-
-
--- ============================================================
--- 8. STATUS CONSTRAINT
--- ============================================================
-
-
-alter table public.task_claims
-drop constraint if exists task_claims_status_check;
-
-
-alter table public.task_claims
-add constraint task_claims_status_check
-check (
-    status in (
-        'pending',
-        'approved',
-        'rejected'
-    )
-);
-
-
--- ============================================================
--- 9. RECREATE USER CLAIM READ POLICY
--- ============================================================
-
-
-drop policy if exists "task_claims_read_own"
-on public.task_claims;
-
-
-create policy "task_claims_read_own"
-on public.task_claims
-for select
-to authenticated
-using (
-    user_id = auth.uid()
-);
-
-
--- ============================================================
--- IMPORTANT:
---
--- There is NO INSERT policy.
---
--- There is NO UPDATE policy.
---
--- Users cannot directly create or modify claims.
---
--- All submissions must go through:
---
---     submit_task_for_review()
---
--- ============================================================
-
-
--- ============================================================
--- 10. SUBMIT TASK FOR MANUAL REVIEW
--- ============================================================
---
--- This function:
---
---   1. Requires authentication
---   2. Requires a profile
---   3. Requires an active task
---   4. Requires proof
---   5. Validates the proof URL
---   6. Requires X/Twitter URL
---   7. Creates a PENDING claim
---   8. DOES NOT AWARD WP
---
--- ============================================================
-
-
-create or replace function public.submit_task_for_review(
-    p_task_id text,
-    p_proof_url text
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-
-declare
-    v_uid            uuid;
-    v_task           public.tasks%rowtype;
-    v_proof          text;
-    v_existing       public.task_claims%rowtype;
-
-begin
-
-    -- --------------------------------------------------------
-    -- 1. Identify authenticated user
-    -- --------------------------------------------------------
-
-    v_uid := auth.uid();
-
-
-    if v_uid is null then
-
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'NOT_AUTHENTICATED'
+/* ============================================================
+   THE GREEN WARDEN
+   SAFE REFERRAL + DASHBOARD COMPATIBILITY SQL
+   ============================================================
+
+   IMPORTANT:
+   - Does NOT drop tables.
+   - Does NOT delete existing users/data.
+   - Does NOT reset WP.
+   - A referral is NOT rewarded when merely attached.
+   - A successful/qualified referral pays EXACTLY +200 WP.
+   - The +200 reward can only be paid once.
+   ============================================================ */
+
+
+/* ============================================================
+   1. REFERRAL CODE UNIQUE INDEX
+   ============================================================ */
+
+CREATE UNIQUE INDEX IF NOT EXISTS referral_codes_referral_code_uidx
+ON public.referral_codes (referral_code);
+
+
+/* ============================================================
+   2. GENERATE REFERRAL CODE
+   ============================================================ */
+
+CREATE OR REPLACE FUNCTION public.generate_referral_code()
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user_id uuid := auth.uid();
+    v_existing text;
+    v_code text;
+BEGIN
+
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'AUTH_REQUIRED';
+    END IF;
+
+
+    /* Existing permanent code */
+    SELECT referral_code
+    INTO v_existing
+    FROM public.referral_codes
+    WHERE user_id = v_user_id
+    LIMIT 1;
+
+
+    IF v_existing IS NOT NULL THEN
+        RETURN v_existing;
+    END IF;
+
+
+    /*
+      Example:
+      GW1A2B3C4D
+    */
+
+    v_code :=
+        'GW' ||
+        upper(
+            substr(
+                replace(v_user_id::text, '-', ''),
+                1,
+                8
+            )
         );
 
-    end if;
 
+    BEGIN
 
-    -- --------------------------------------------------------
-    -- 2. Verify profile exists
-    -- --------------------------------------------------------
-
-    if not exists (
-        select 1
-        from public.profiles
-        where id = v_uid
-    ) then
-
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'PROFILE_NOT_FOUND'
-        );
-
-    end if;
-
-
-    -- --------------------------------------------------------
-    -- 3. Find task
-    -- --------------------------------------------------------
-
-    select *
-    into v_task
-    from public.tasks
-    where id = p_task_id;
-
-
-    if not found then
-
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'UNKNOWN_TASK'
-        );
-
-    end if;
-
-
-    -- --------------------------------------------------------
-    -- 4. Verify task is active
-    -- --------------------------------------------------------
-
-    if not v_task.active then
-
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'TASK_INACTIVE'
-        );
-
-    end if;
-
-
-    -- --------------------------------------------------------
-    -- 5. Clean proof URL
-    -- --------------------------------------------------------
-
-    v_proof := nullif(
-        trim(coalesce(p_proof_url, '')),
-        ''
-    );
-
-
-    -- --------------------------------------------------------
-    -- 6. Proof is mandatory
-    -- --------------------------------------------------------
-
-    if v_task.needs_proof = true
-       and v_proof is null then
-
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'PROOF_REQUIRED'
-        );
-
-    end if;
-
-
-    -- --------------------------------------------------------
-    -- 7. Validate HTTP/HTTPS
-    -- --------------------------------------------------------
-
-    if v_proof !~* '^https?://' then
-
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'INVALID_PROOF_URL'
-        );
-
-    end if;
-
-
-    -- --------------------------------------------------------
-    -- 8. Validate X/Twitter URL
-    -- --------------------------------------------------------
-
-    if v_proof !~* '^https?://(www\.)?(x\.com|twitter\.com)/' then
-
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'INVALID_X_PROOF_URL'
-        );
-
-    end if;
-
-
-    -- --------------------------------------------------------
-    -- 9. Check existing claim
-    -- --------------------------------------------------------
-
-    select *
-    into v_existing
-    from public.task_claims
-    where user_id = v_uid
-      and task_id = p_task_id;
-
-
-    -- --------------------------------------------------------
-    -- 10. Existing approved claim
-    -- --------------------------------------------------------
-
-    if found
-       and v_existing.status = 'approved' then
-
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'ALREADY_APPROVED'
-        );
-
-    end if;
-
-
-    -- --------------------------------------------------------
-    -- 11. Existing pending claim
-    -- --------------------------------------------------------
-
-    if found
-       and v_existing.status = 'pending' then
-
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'ALREADY_PENDING'
-        );
-
-    end if;
-
-
-    -- --------------------------------------------------------
-    -- 12. Rejected claim can be resubmitted
-    -- --------------------------------------------------------
-
-    if found
-       and v_existing.status = 'rejected' then
-
-        update public.task_claims
-        set
-            proof_url   = v_proof,
-            status      = 'pending',
-            claimed_at  = now(),
-            reviewed_at = null,
-            reviewed_by = null,
-            wp_awarded  = 0
-
-        where user_id = v_uid
-          and task_id = p_task_id;
-
-
-    else
-
-        -- ----------------------------------------------------
-        -- 13. Create new pending claim
-        -- ----------------------------------------------------
-
-        insert into public.task_claims (
+        INSERT INTO public.referral_codes (
             user_id,
-            task_id,
-            wp_awarded,
-            proof_url,
-            status
+            referral_code
         )
-        values (
-            v_uid,
-            p_task_id,
-            0,
-            v_proof,
-            'pending'
+        VALUES (
+            v_user_id,
+            v_code
         );
 
-    end if;
+    EXCEPTION
+        WHEN unique_violation THEN
+
+            v_code :=
+                'GW' ||
+                upper(
+                    substr(
+                        replace(v_user_id::text, '-', ''),
+                        1,
+                        12
+                    )
+                );
+
+            INSERT INTO public.referral_codes (
+                user_id,
+                referral_code
+            )
+            VALUES (
+                v_user_id,
+                v_code
+            );
+
+    END;
 
 
-    -- --------------------------------------------------------
-    -- 14. IMPORTANT:
-    --
-    -- NO WP UPDATE HERE.
-    --
-    -- WP will only be awarded by approve_task_claim().
-    -- --------------------------------------------------------
+    RETURN v_code;
 
-
-    return jsonb_build_object(
-        'ok', true,
-        'task_id', p_task_id,
-        'status', 'pending',
-        'proof_submitted', true,
-        'message', 'Proof submitted for manual review.'
-    );
-
-
-end;
+END;
 $$;
 
 
--- ============================================================
--- 11. ALLOW LOGGED-IN USERS TO SUBMIT
--- ============================================================
+/* ============================================================
+   3. GET MY REFERRAL CODE
+   ============================================================ */
+
+CREATE OR REPLACE FUNCTION public.get_my_referral_code()
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user_id uuid := auth.uid();
+    v_code text;
+BEGIN
+
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'AUTH_REQUIRED';
+    END IF;
 
 
-grant execute
-on function public.submit_task_for_review(text, text)
-to authenticated;
+    SELECT referral_code
+    INTO v_code
+    FROM public.referral_codes
+    WHERE user_id = v_user_id
+    LIMIT 1;
 
 
--- ============================================================
--- 12. TASK BOARD
--- ============================================================
---
--- Returns:
---
---   tasks
---   task_claims
---
--- Including:
---
---   status
---   proof_url
---   wp_awarded
---   claimed_at
---   reviewed_at
---
--- ============================================================
+    IF v_code IS NULL THEN
+        v_code := public.generate_referral_code();
+    END IF;
 
 
-create or replace function public.get_task_board()
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
+    RETURN v_code;
 
-declare
-    v_uid uuid;
-
-begin
-
-    -- --------------------------------------------------------
-    -- Identify user
-    -- --------------------------------------------------------
-
-    v_uid := auth.uid();
+END;
+$$;
 
 
-    if v_uid is null then
+/* ============================================================
+   4. GET MY REFERRAL DATA
+   ============================================================
 
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'NOT_AUTHENTICATED'
-        );
+   Dashboard expects:
 
-    end if;
+       total_referrals
+       total_wp_earned
+       my_activity_streak
+       my_7_day_qualified
+
+   We also return the existing/legacy names for compatibility.
+
+   IMPORTANT:
+   referral_rewards uses wp_awarded, NOT wp_amount.
+   ============================================================ */
+
+CREATE OR REPLACE FUNCTION public.get_my_referral_data()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+
+    v_user_id uuid := auth.uid();
+
+    v_code text;
+
+    v_total_referrals integer := 0;
+    v_successful_referrals integer := 0;
+    v_reward_count integer := 0;
+
+    v_total_wp integer := 0;
+
+    v_has_been_referred boolean := false;
+
+    v_activity_streak integer := 0;
+    v_days_remaining integer := 7;
+
+    v_qualified boolean := false;
+
+    v_today date;
+
+BEGIN
+
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'AUTH_REQUIRED';
+    END IF;
 
 
-    -- --------------------------------------------------------
-    -- Return task board
-    -- --------------------------------------------------------
+    /* --------------------------------------------------------
+       Referral code
+       -------------------------------------------------------- */
 
-    return jsonb_build_object(
-
-        'ok',
-        true,
+    v_code := public.get_my_referral_code();
 
 
-        -- ----------------------------------------------------
-        -- ACTIVE TASKS
-        -- ----------------------------------------------------
+    /* --------------------------------------------------------
+       Total referrals
+       -------------------------------------------------------- */
 
-        'tasks',
+    SELECT count(*)
+    INTO v_total_referrals
+    FROM public.referrals
+    WHERE referrer_id = v_user_id;
 
-        (
-            select coalesce(
-                jsonb_agg(
-                    jsonb_build_object(
-                        'id', t.id,
-                        'label', t.label,
-                        'url', t.url,
-                        'wp_reward', t.wp_reward,
-                        'needs_proof', t.needs_proof
-                    )
-                    order by t.sort_order
-                ),
-                '[]'::jsonb
-            )
 
-            from public.tasks t
+    /* --------------------------------------------------------
+       Successful referrals
+       -------------------------------------------------------- */
 
-            where t.active = true
+    SELECT count(*)
+    INTO v_successful_referrals
+    FROM public.referrals
+    WHERE referrer_id = v_user_id
+      AND qualified_at IS NOT NULL;
+
+
+    /* --------------------------------------------------------
+       Rewards
+
+       IMPORTANT:
+       actual column is wp_awarded.
+       ======================================================== */
+
+    SELECT
+        count(*),
+        COALESCE(sum(wp_awarded), 0)
+    INTO
+        v_reward_count,
+        v_total_wp
+    FROM public.referral_rewards
+    WHERE referrer_id = v_user_id;
+
+
+    /* --------------------------------------------------------
+       Has this user been referred?
+       -------------------------------------------------------- */
+
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.referrals
+        WHERE referred_id = v_user_id
+    )
+    INTO v_has_been_referred;
+
+
+    /* --------------------------------------------------------
+       Manila date
+       -------------------------------------------------------- */
+
+    v_today :=
+        (now() AT TIME ZONE 'Asia/Manila')::date;
+
+
+    /* --------------------------------------------------------
+       Current consecutive check-in streak
+
+       Uses the REAL checkins schema:
+
+           user_id
+           day
+           day_in_cycle
+           wp_awarded
+           created_at
+       -------------------------------------------------------- */
+
+    IF v_has_been_referred THEN
+
+        WITH days AS (
+
+            SELECT DISTINCT day
+
+            FROM public.checkins
+
+            WHERE user_id = v_user_id
+              AND day <= v_today
+
         ),
 
+        numbered AS (
 
-        -- ----------------------------------------------------
-        -- USER CLAIMS
-        -- ----------------------------------------------------
+            SELECT
+                day,
 
-        'task_claims',
-
-        (
-            select coalesce(
-                jsonb_agg(
-                    jsonb_build_object(
-                        'task_id', c.task_id,
-                        'wp_awarded', c.wp_awarded,
-                        'proof_url', c.proof_url,
-                        'status', c.status,
-                        'claimed_at', c.claimed_at,
-                        'reviewed_at', c.reviewed_at
+                day -
+                (
+                    row_number() OVER (
+                        ORDER BY day DESC
                     )
-                    order by c.claimed_at desc
-                ),
-                '[]'::jsonb
-            )
+                )::integer AS grp
 
-            from public.task_claims c
+            FROM days
 
-            where c.user_id = v_uid
+        ),
+
+        latest_group AS (
+
+            SELECT grp
+
+            FROM numbered
+
+            ORDER BY day DESC
+
+            LIMIT 1
+
         )
 
+        SELECT count(*)
+        INTO v_activity_streak
+
+        FROM numbered
+
+        WHERE grp = (
+            SELECT grp
+            FROM latest_group
+        );
+
+
+        /*
+          If the latest check-in is not today or yesterday,
+          the active streak is zero.
+        */
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM public.checkins
+            WHERE user_id = v_user_id
+              AND day = v_today
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM public.checkins
+            WHERE user_id = v_user_id
+              AND day = v_today - 1
+        ) THEN
+
+            v_activity_streak := 0;
+
+        END IF;
+
+    END IF;
+
+
+    /* --------------------------------------------------------
+       7-day qualification
+       -------------------------------------------------------- */
+
+    v_qualified :=
+        v_has_been_referred
+        AND v_activity_streak >= 7;
+
+
+    /* --------------------------------------------------------
+       Days remaining
+       -------------------------------------------------------- */
+
+    IF v_qualified THEN
+
+        v_days_remaining := 0;
+
+    ELSE
+
+        v_days_remaining :=
+            GREATEST(
+                0,
+                7 - v_activity_streak
+            );
+
+    END IF;
+
+
+    RETURN jsonb_build_object(
+
+        /* ====================================================
+           DASHBOARD FIELD NAMES
+           ==================================================== */
+
+        'referral_code',
+            v_code,
+
+        'referral_link',
+            '?ref=' || v_code,
+
+        'total_referrals',
+            v_total_referrals,
+
+        'total_wp_earned',
+            v_total_wp,
+
+        'my_activity_streak',
+            v_activity_streak,
+
+        'my_7_day_qualified',
+            v_qualified,
+
+
+        /* ====================================================
+           ADDITIONAL REFERRAL INFORMATION
+           ==================================================== */
+
+        'has_been_referred',
+            v_has_been_referred,
+
+        'successful_referrals',
+            v_successful_referrals,
+
+        'reward_count',
+            v_reward_count,
+
+        'activity_streak',
+            v_activity_streak,
+
+        'days_remaining',
+            v_days_remaining,
+
+        'qualified',
+            v_qualified,
+
+
+        /* ====================================================
+           LEGACY COMPATIBILITY
+           ==================================================== */
+
+        'referral_count',
+            v_total_referrals
+
     );
 
-end;
+END;
 $$;
 
 
--- ============================================================
--- 13. ALLOW LOGGED-IN USERS TO LOAD TASK BOARD
--- ============================================================
+/* ============================================================
+   5. ATTACH REFERRAL
+   ============================================================
 
+   IMPORTANT:
 
-grant execute
-on function public.get_task_board()
-to authenticated;
+   Attaching a referral code DOES NOT award WP.
 
+   It only creates:
 
--- ============================================================
--- 14. ADMIN APPROVAL FUNCTION
--- ============================================================
---
--- IMPORTANT:
---
--- This function is intentionally NOT granted to normal
--- authenticated users.
---
--- Run it manually from Supabase SQL Editor.
---
--- When approved:
---
---   1. Task must be pending
---   2. WP reward comes from the task
---   3. User's WP is increased
---   4. Claim becomes approved
---   5. WP cannot be awarded twice
---
--- ============================================================
+       referrals
 
+   The +200 WP reward happens ONLY after qualification.
+   ============================================================ */
 
-create or replace function public.approve_task_claim(
-    p_user_id uuid,
-    p_task_id text
+CREATE OR REPLACE FUNCTION public.attach_referral(
+    p_code text
 )
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
 
-declare
-    v_claim       public.task_claims%rowtype;
-    v_task        public.tasks%rowtype;
-    v_reward      integer;
+    v_user_id uuid := auth.uid();
 
-begin
+    v_code text;
 
-    -- --------------------------------------------------------
-    -- Find claim
-    -- --------------------------------------------------------
+    v_referrer_id uuid;
 
-    select *
-    into v_claim
-    from public.task_claims
-    where user_id = p_user_id
-      and task_id = p_task_id
-    for update;
+    v_referral_id bigint;
 
+BEGIN
 
-    if not found then
+    IF v_user_id IS NULL THEN
 
-        return jsonb_build_object(
+        RETURN jsonb_build_object(
             'ok', false,
-            'error', 'CLAIM_NOT_FOUND'
+            'success', false,
+            'message', 'AUTH_REQUIRED'
         );
 
-    end if;
+    END IF;
 
 
-    -- --------------------------------------------------------
-    -- Prevent double approval
-    -- --------------------------------------------------------
-
-    if v_claim.status = 'approved' then
-
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'ALREADY_APPROVED'
+    v_code :=
+        upper(
+            trim(
+                coalesce(p_code, '')
+            )
         );
 
-    end if;
 
+    IF v_code = '' THEN
 
-    -- --------------------------------------------------------
-    -- Only pending claims can be approved
-    -- --------------------------------------------------------
-
-    if v_claim.status <> 'pending' then
-
-        return jsonb_build_object(
+        RETURN jsonb_build_object(
             'ok', false,
-            'error', 'CLAIM_NOT_PENDING',
-            'status', v_claim.status
+            'success', false,
+            'message', 'INVALID_CODE'
         );
 
-    end if;
+    END IF;
 
 
-    -- --------------------------------------------------------
-    -- Find task
-    -- --------------------------------------------------------
+    /* Find referral code owner */
 
-    select *
-    into v_task
-    from public.tasks
-    where id = p_task_id;
+    SELECT user_id
+    INTO v_referrer_id
+
+    FROM public.referral_codes
+
+    WHERE upper(referral_code) = v_code
+
+    LIMIT 1;
 
 
-    if not found then
+    IF v_referrer_id IS NULL THEN
 
-        return jsonb_build_object(
+        RETURN jsonb_build_object(
             'ok', false,
-            'error', 'TASK_NOT_FOUND'
+            'success', false,
+            'message', 'REFERRAL_CODE_NOT_FOUND'
         );
 
-    end if;
+    END IF;
 
 
-    v_reward := v_task.wp_reward;
+    /* Prevent self-referral */
 
+    IF v_referrer_id = v_user_id THEN
 
-    -- --------------------------------------------------------
-    -- Award WP
-    -- --------------------------------------------------------
-
-    update public.profiles
-    set wp = coalesce(wp, 0) + v_reward
-    where id = p_user_id;
-
-
-    if not found then
-
-        return jsonb_build_object(
+        RETURN jsonb_build_object(
             'ok', false,
-            'error', 'PROFILE_NOT_FOUND'
+            'success', false,
+            'message', 'SELF_REFERRAL'
         );
 
-    end if;
+    END IF;
 
 
-    -- --------------------------------------------------------
-    -- Mark approved
-    -- --------------------------------------------------------
+    /* Prevent attaching twice */
 
-    update public.task_claims
-    set
-        status      = 'approved',
-        wp_awarded  = v_reward,
-        reviewed_at = now(),
-        reviewed_by = auth.uid()
+    IF EXISTS (
+        SELECT 1
+        FROM public.referrals
+        WHERE referred_id = v_user_id
+    ) THEN
 
-    where user_id = p_user_id
-      and task_id = p_task_id;
+        RETURN jsonb_build_object(
+            'ok', false,
+            'success', false,
+            'message', 'ALREADY_REFERRED'
+        );
+
+    END IF;
 
 
-    -- --------------------------------------------------------
-    -- Return result
-    -- --------------------------------------------------------
+    INSERT INTO public.referrals (
+        referrer_id,
+        referred_id,
+        referral_code
+    )
 
-    return jsonb_build_object(
+    VALUES (
+        v_referrer_id,
+        v_user_id,
+        v_code
+    )
+
+    RETURNING id
+    INTO v_referral_id;
+
+
+    /*
+      NO WP IS AWARDED HERE.
+
+      The successful referral reward is handled by
+      qualify_referral() after the referred user reaches
+      the required activity.
+    */
+
+
+    RETURN jsonb_build_object(
+
         'ok', true,
-        'user_id', p_user_id,
-        'task_id', p_task_id,
-        'status', 'approved',
-        'wp_awarded', v_reward
+
+        'success', true,
+
+        'message', 'REFERRAL_ATTACHED',
+
+        'referral_id',
+            v_referral_id,
+
+        'referrer_id',
+            v_referrer_id,
+
+        'wp_awarded',
+            0
+
     );
 
-end;
+END;
 $$;
 
 
--- ============================================================
--- IMPORTANT:
---
--- DO NOT GRANT approve_task_claim() TO authenticated.
---
--- It remains restricted to the database owner / privileged
--- SQL execution.
---
--- ============================================================
+/* ============================================================
+   6. QUALIFY REFERRAL
+   ============================================================
 
+   SUCCESSFUL REFERRAL REWARD:
 
--- ============================================================
--- 15. ADMIN REJECTION FUNCTION
--- ============================================================
---
--- Rejecting does NOT remove or deduct WP because no WP has
--- been awarded while the claim is pending.
---
--- A rejected user can submit again.
---
--- ============================================================
+       EXACTLY +200 WP
 
+   Rules:
 
-create or replace function public.reject_task_claim(
-    p_user_id uuid,
-    p_task_id text
+       1. Referral must exist.
+       2. Referred user must have 7 consecutive check-in days.
+       3. Referral must not already be qualified.
+       4. Reward is recorded in referral_rewards.
+       5. Referrer's profile receives exactly +200 WP.
+       6. The reward cannot be paid twice.
+   ============================================================ */
+
+CREATE OR REPLACE FUNCTION public.qualify_referral(
+    p_referred_user uuid
 )
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
 
-declare
-    v_claim public.task_claims%rowtype;
+    v_referral public.referrals%ROWTYPE;
 
-begin
+    v_today date;
 
-    -- --------------------------------------------------------
-    -- Find claim
-    -- --------------------------------------------------------
+    v_streak integer := 0;
 
-    select *
-    into v_claim
-    from public.task_claims
-    where user_id = p_user_id
-      and task_id = p_task_id
-    for update;
+    v_reward integer := 200;
 
+BEGIN
 
-    if not found then
+    IF p_referred_user IS NULL THEN
 
-        return jsonb_build_object(
+        RETURN jsonb_build_object(
             'ok', false,
-            'error', 'CLAIM_NOT_FOUND'
+            'rewarded', false,
+            'error', 'INVALID_USER'
         );
 
-    end if;
+    END IF;
 
 
-    -- --------------------------------------------------------
-    -- Prevent rejecting an approved claim
-    -- --------------------------------------------------------
+    /* --------------------------------------------------------
+       Locate referral
+       -------------------------------------------------------- */
 
-    if v_claim.status = 'approved' then
+    SELECT *
+    INTO v_referral
 
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'ALREADY_APPROVED'
+    FROM public.referrals
+
+    WHERE referred_id = p_referred_user
+
+    ORDER BY created_at ASC
+
+    LIMIT 1;
+
+
+    IF NOT FOUND THEN
+
+        RETURN jsonb_build_object(
+            'ok', true,
+            'rewarded', false,
+            'error', 'NO_REFERRAL'
         );
 
-    end if;
+    END IF;
 
 
-    -- --------------------------------------------------------
-    -- Only pending claims can be rejected
-    -- --------------------------------------------------------
+    /* --------------------------------------------------------
+       Already qualified
+       -------------------------------------------------------- */
 
-    if v_claim.status <> 'pending' then
+    IF v_referral.qualified_at IS NOT NULL THEN
 
-        return jsonb_build_object(
-            'ok', false,
-            'error', 'CLAIM_NOT_PENDING',
-            'status', v_claim.status
+        RETURN jsonb_build_object(
+            'ok', true,
+            'rewarded', false,
+            'already_qualified', true,
+            'wp_awarded', 0
         );
 
-    end if;
+    END IF;
 
 
-    -- --------------------------------------------------------
-    -- Mark rejected
-    -- --------------------------------------------------------
+    /* --------------------------------------------------------
+       Manila date
+       -------------------------------------------------------- */
 
-    update public.task_claims
-    set
-        status      = 'rejected',
-        wp_awarded  = 0,
-        reviewed_at = now(),
-        reviewed_by = auth.uid()
-
-    where user_id = p_user_id
-      and task_id = p_task_id;
+    v_today :=
+        (now() AT TIME ZONE 'Asia/Manila')::date;
 
 
-    return jsonb_build_object(
-        'ok', true,
-        'user_id', p_user_id,
-        'task_id', p_task_id,
-        'status', 'rejected'
+    /* --------------------------------------------------------
+       Calculate consecutive check-in streak
+       -------------------------------------------------------- */
+
+    WITH days AS (
+
+        SELECT DISTINCT day
+
+        FROM public.checkins
+
+        WHERE user_id = p_referred_user
+          AND day <= v_today
+
+    ),
+
+    numbered AS (
+
+        SELECT
+
+            day,
+
+            day -
+            (
+                row_number() OVER (
+                    ORDER BY day DESC
+                )
+            )::integer AS grp
+
+        FROM days
+
+    ),
+
+    latest_group AS (
+
+        SELECT grp
+
+        FROM numbered
+
+        ORDER BY day DESC
+
+        LIMIT 1
+
+    )
+
+    SELECT count(*)
+
+    INTO v_streak
+
+    FROM numbered
+
+    WHERE grp = (
+        SELECT grp
+        FROM latest_group
     );
 
-end;
+
+    /* --------------------------------------------------------
+       Not qualified yet
+       -------------------------------------------------------- */
+
+    IF v_streak < 7 THEN
+
+        RETURN jsonb_build_object(
+
+            'ok', true,
+
+            'rewarded', false,
+
+            'streak', v_streak,
+
+            'required', 7,
+
+            'wp_awarded', 0
+
+        );
+
+    END IF;
+
+
+    /* --------------------------------------------------------
+       Lock referral row
+       -------------------------------------------------------- */
+
+    SELECT *
+    INTO v_referral
+
+    FROM public.referrals
+
+    WHERE id = v_referral.id
+
+    FOR UPDATE;
+
+
+    /* --------------------------------------------------------
+       Double-check qualification
+       -------------------------------------------------------- */
+
+    IF v_referral.qualified_at IS NOT NULL THEN
+
+        RETURN jsonb_build_object(
+            'ok', true,
+            'rewarded', false,
+            'already_qualified', true,
+            'wp_awarded', 0
+        );
+
+    END IF;
+
+
+    /* --------------------------------------------------------
+       Mark referral qualified
+       -------------------------------------------------------- */
+
+    UPDATE public.referrals
+
+    SET
+        qualified_at = now(),
+
+        active_rewarded_at = now()
+
+    WHERE id = v_referral.id;
+
+
+    /* --------------------------------------------------------
+       Record EXACTLY ONE +200 WP reward
+       -------------------------------------------------------- */
+
+    INSERT INTO public.referral_rewards (
+
+        referral_id,
+
+        referrer_id,
+
+        reward_type,
+
+        wp_awarded
+
+    )
+
+    VALUES (
+
+        v_referral.id,
+
+        v_referral.referrer_id,
+
+        'successful_referral',
+
+        v_reward
+
+    );
+
+
+    /* --------------------------------------------------------
+       Award EXACTLY +200 WP to referrer
+       -------------------------------------------------------- */
+
+    UPDATE public.profiles
+
+    SET
+        wp = COALESCE(wp, 0) + v_reward
+
+    WHERE id = v_referral.referrer_id;
+
+
+    RETURN jsonb_build_object(
+
+        'ok', true,
+
+        'rewarded', true,
+
+        'streak', v_streak,
+
+        'required', 7,
+
+        'wp_awarded', v_reward,
+
+        'referrer_id',
+            v_referral.referrer_id,
+
+        'referral_id',
+            v_referral.id
+
+    );
+
+END;
 $$;
 
 
--- ============================================================
--- 16. REMOVE PUBLIC EXECUTION PERMISSIONS FROM ADMIN FUNCTIONS
--- ============================================================
+/* ============================================================
+   7. QUALIFY MY REFERRAL
+   ============================================================ */
+
+CREATE OR REPLACE FUNCTION public.qualify_my_referral()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+
+    IF auth.uid() IS NULL THEN
+
+        RETURN jsonb_build_object(
+            'ok', false,
+            'rewarded', false,
+            'error', 'AUTH_REQUIRED'
+        );
+
+    END IF;
 
 
-revoke all
-on function public.approve_task_claim(uuid, text)
-from public;
+    RETURN public.qualify_referral(
+        auth.uid()
+    );
 
-revoke all
-on function public.approve_task_claim(uuid, text)
-from anon;
-
-revoke all
-on function public.approve_task_claim(uuid, text)
-from authenticated;
+END;
+$$;
 
 
-revoke all
-on function public.reject_task_claim(uuid, text)
-from public;
+/* ============================================================
+   8. FUNCTION PERMISSIONS
+   ============================================================ */
 
-revoke all
-on function public.reject_task_claim(uuid, text)
-from anon;
+REVOKE ALL
+ON FUNCTION public.generate_referral_code()
+FROM PUBLIC;
 
-revoke all
-on function public.reject_task_claim(uuid, text)
-from authenticated;
+REVOKE ALL
+ON FUNCTION public.get_my_referral_code()
+FROM PUBLIC;
 
+REVOKE ALL
+ON FUNCTION public.get_my_referral_data()
+FROM PUBLIC;
 
--- ============================================================
--- 17. ADMIN REVIEW QUERY
--- ============================================================
---
--- Run this AFTER the migration to see pending submissions.
---
--- ============================================================
+REVOKE ALL
+ON FUNCTION public.attach_referral(text)
+FROM PUBLIC;
 
+REVOKE ALL
+ON FUNCTION public.qualify_referral(uuid)
+FROM PUBLIC;
 
--- SELECT
---     tc.claimed_at,
---     tc.status,
---     tc.user_id,
---     p.username,
---     p.google_name,
---     t.id AS task_id,
---     t.label,
---     t.wp_reward,
---     tc.proof_url,
---     tc.wp_awarded,
---     tc.reviewed_at
---
--- FROM public.task_claims tc
---
--- JOIN public.tasks t
---     ON t.id = tc.task_id
---
--- LEFT JOIN public.profiles p
---     ON p.id = tc.user_id
---
--- WHERE tc.status = 'pending'
---
--- ORDER BY tc.claimed_at ASC;
+REVOKE ALL
+ON FUNCTION public.qualify_my_referral()
+FROM PUBLIC;
 
 
--- ============================================================
--- 18. VIEW ALL CLAIMS
--- ============================================================
---
--- Useful for checking the complete history.
---
--- ============================================================
+GRANT EXECUTE
+ON FUNCTION public.get_my_referral_code()
+TO authenticated;
+
+GRANT EXECUTE
+ON FUNCTION public.get_my_referral_data()
+TO authenticated;
+
+GRANT EXECUTE
+ON FUNCTION public.attach_referral(text)
+TO authenticated;
+
+GRANT EXECUTE
+ON FUNCTION public.qualify_referral(uuid)
+TO authenticated;
+
+GRANT EXECUTE
+ON FUNCTION public.qualify_my_referral()
+TO authenticated;
 
 
--- SELECT
---     tc.claimed_at,
---     tc.status,
---     tc.user_id,
---     p.username,
---     p.google_name,
---     t.id AS task_id,
---     t.label,
---     tc.proof_url,
---     tc.wp_awarded,
---     tc.reviewed_at
---
--- FROM public.task_claims tc
---
--- JOIN public.tasks t
---     ON t.id = tc.task_id
---
--- LEFT JOIN public.profiles p
---     ON p.id = tc.user_id
---
--- ORDER BY tc.claimed_at DESC;
+/* ============================================================
+   9. VERIFY REFERRAL FUNCTIONS
+   ============================================================ */
+
+SELECT
+    p.proname AS function_name,
+    pg_get_function_identity_arguments(p.oid) AS arguments,
+    pg_get_function_result(p.oid) AS return_type
+FROM pg_proc p
+JOIN pg_namespace n
+    ON n.oid = p.pronamespace
+WHERE n.nspname = 'public'
+AND p.proname IN (
+    'generate_referral_code',
+    'get_my_referral_code',
+    'get_my_referral_data',
+    'attach_referral',
+    'qualify_referral',
+    'qualify_my_referral'
+)
+ORDER BY
+    p.proname,
+    arguments;
 
 
--- ============================================================
--- 19. VERIFY TASKS
--- ============================================================
+/* ============================================================
+   10. CHECK EXISTING REFERRAL REWARDS
+   ============================================================ */
 
-
-select
+SELECT
     id,
-    label,
-    url,
-    wp_reward,
-    needs_proof,
-    active,
-    sort_order
-from public.tasks
-order by sort_order;
+    referral_id,
+    referrer_id,
+    reward_type,
+    wp_awarded,
+    created_at
+FROM public.referral_rewards
+ORDER BY created_at DESC
+LIMIT 20;
 
 
--- ============================================================
--- 20. VERIFY TASK CLAIM TABLE
--- ============================================================
+/* ============================================================
+   11. CHECK REFERRALS
+   ============================================================ */
 
-
-select
-    column_name,
-    data_type,
-    is_nullable,
-    column_default
-from information_schema.columns
-where table_schema = 'public'
-and table_name = 'task_claims'
-order by ordinal_position;
-
-
--- ============================================================
--- 21. VERIFY FUNCTIONS
--- ============================================================
-
-
-select
-    routine_name,
-    routine_type
-from information_schema.routines
-where routine_schema = 'public'
-and routine_name in (
-    'submit_task_for_review',
-    'get_task_board',
-    'approve_task_claim',
-    'reject_task_claim',
-    'claim_task'
-)
-order by routine_name;
-
-
--- ============================================================
--- FINISH
--- ============================================================
-
-
-commit;
+SELECT
+    id,
+    referrer_id,
+    referred_id,
+    referral_code,
+    initial_reward,
+    initial_rewarded_at,
+    active_reward,
+    active_rewarded_at,
+    qualified_at,
+    created_at
+FROM public.referrals
+ORDER BY created_at DESC
+LIMIT 20;
