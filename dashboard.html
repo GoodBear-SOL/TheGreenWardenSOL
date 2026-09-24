@@ -13,7 +13,16 @@
 html{background:var(--void);scroll-behavior:smooth;-webkit-text-size-adjust:100%}
 body{color:var(--parch);font-family:'Crimson Text',Georgia,serif;min-height:100vh;overflow-x:hidden;
 background:radial-gradient(900px 500px at 12% 5%,rgba(28,156,82,.2),transparent 60%),radial-gradient(850px 500px at 88% 14%,rgba(45,111,77,.15),transparent 62%),linear-gradient(180deg,#020806,#04100a 45%,#020806)}
-.bg{position:fixed;inset:0;z-index:0;pointer-events:none;background:url('assets/field.webp') center/cover no-repeat;opacity:.35}
+.bg{position:fixed;inset:0;z-index:0;pointer-events:none;background:
+  linear-gradient(rgba(2,8,6,.56),rgba(2,8,6,.72)),
+  url('assets/field.webp') center/cover no-repeat;
+  opacity:.52;
+  filter:saturate(.82) contrast(.92) brightness(.72);
+  transform:scale(1.015);
+  will-change:transform;
+}
+.bg::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 35%,transparent 0%,rgba(2,8,6,.18) 42%,rgba(2,8,6,.62) 100%);}
+
 a{color:inherit}button{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--flame);outline-offset:3px}
 h1,h2,h3{font-family:'Cinzel',serif;letter-spacing:.04em}
