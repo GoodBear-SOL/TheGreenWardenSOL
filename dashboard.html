@@ -346,7 +346,7 @@ footer .row a:hover{color:var(--flame)}
   <section class="referral-card glass participant-only" aria-labelledby="referral-title">
     <span class="eyebrow">Warden Alliance</span>
     <h2 class="ci-title" id="referral-title">Invite another Warden</h2>
-    <p class="ci-sub">Share your referral link. When an invited Warden reaches a 7-day check-in streak (with at least 3 check-ins), you earn +200 WP. Attaching a code by itself does not pay anything.</p>
+    <p class="ci-sub">Share your referral link. When another Warden accepts your referral code, you earn +200 WP. If that Warden reaches a 7-day streak, you earn another +300 WP. Maximum +500 WP per referral.</p>
     <div class="referral-grid">
       <div class="referral-box">
         <div class="referral-label">Your referral code</div>
@@ -1116,24 +1116,65 @@ footer .row a:hover{color:var(--flame)}
 
   async function attachReferral(code){
     const clean=String(code||'').trim().toUpperCase();
-    if(!clean) return setRefMsg('#ref-activity-msg','Enter a referral code first.','bad');
-    const btn=$('#ref-attach'), original=btn.textContent;
-    btn.disabled=true; btn.textContent='Attaching…';
+    if(!clean){
+      setRefMsg('#ref-activity-msg','Enter a referral code first.','bad');
+      return false;
+    }
+
+    const btn=$('#ref-attach');
+    if(!btn) return false;
+    const original=btn.textContent;
+    btn.disabled=true;
+    btn.textContent='Attaching…';
     setRefMsg('#ref-activity-msg','Attaching referral code…');
+
     try{
+      // Confirm the browser still has an authenticated Supabase session.
+      // The SQL Editor cannot provide auth.uid(), but the dashboard browser can.
+      const {data:sessionData,error:sessionError}=await sb.auth.getSession();
+      if(sessionError) throw sessionError;
+      if(!sessionData||!sessionData.session){
+        setRefMsg('#ref-activity-msg','Your session has expired. Please sign in again.','bad');
+        setTimeout(()=>window.location.replace(LOGIN_PAGE),700);
+        return false;
+      }
+
       const {data,error}=await sb.rpc('attach_referral',{p_code:clean});
       if(error) throw error;
+
       if(!data||!data.success){
-        setRefMsg('#ref-activity-msg',(data&&data.message)||'Referral code could not be attached.','bad');
-        return;
+        const msg=(data&&data.message)||'Referral code could not be attached.';
+        setRefMsg('#ref-activity-msg',msg,'bad');
+        if(data&&data.error==='NOT_AUTHENTICATED')
+          setTimeout(()=>window.location.replace(LOGIN_PAGE),700);
+        return false;
       }
+
+      // The referral transaction has already succeeded in Supabase.
+      // Do not let a later dashboard refresh failure turn that success into
+      // the misleading "Could not attach" message.
       $('#ref-input').value='';
-      setRefMsg('#ref-activity-msg','Referral attached successfully.','ok');
-      toast('Referral attached!');
-      await loadStatus();
+      setRefMsg('#ref-activity-msg','Referral attached successfully. The referrer earned +200 WP.','ok');
+      toast('Referral attached — +200 WP awarded to the referrer!');
+
+      try{
+        await loadStatus();
+      }catch(refreshError){
+        console.warn('Referral attached, but dashboard refresh failed:',refreshError);
+        // Keep the success message because the RPC transaction already completed.
+      }
+      return true;
     }catch(e){
       console.error('Referral attach error:',e);
-      setRefMsg('#ref-activity-msg','Could not attach the referral code. Please try again.','bad');
+      const code=String(e&&e.code||'');
+      const msg=String(e&&e.message||'');
+      if(/JWT|401|not authenticated/i.test(code+' '+msg)){
+        setRefMsg('#ref-activity-msg','Your session has expired. Please sign in again.','bad');
+        setTimeout(()=>window.location.replace(LOGIN_PAGE),700);
+      }else{
+        setRefMsg('#ref-activity-msg','Could not attach the referral code. Please try again.','bad');
+      }
+      return false;
     }finally{
       btn.textContent=original;
       btn.disabled=!!(S&&S.referral&&S.referral.has_been_referred);
@@ -1153,7 +1194,14 @@ footer .row a:hover{color:var(--flame)}
     let code=new URLSearchParams(location.search).get('ref');
     try{ code=code||localStorage.getItem('gw_pending_ref'); }catch(_){}
     if(!code) return;
-    if(!(S&&S.referral&&S.referral.has_been_referred)) await attachReferral(code);
+
+    // Only clear the pending referral after a successful attach or when the
+    // account is already referred. A temporary failure should be retryable.
+    if(!(S&&S.referral&&S.referral.has_been_referred)){
+      const attached=await attachReferral(code);
+      if(!attached) return;
+    }
+
     try{ localStorage.removeItem('gw_pending_ref'); }catch(_){}
     if(history.replaceState) history.replaceState(null,'',location.pathname);
   }
