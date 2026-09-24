@@ -94,6 +94,30 @@
   .card h2{font-size:1.1rem; margin-bottom:8px;}
   .card p.why{color:var(--ink-dim); font-size:1rem; line-height:1.55; margin-bottom:22px;}
 
+  /* Optional referral code box (sits above the Google button) */
+  .refbox{text-align:left; margin-bottom:18px;}
+  .refbox label{
+    display:block; margin-bottom:8px;
+    font-family:'JetBrains Mono', monospace; font-size:0.72rem; letter-spacing:0.16em;
+    text-transform:uppercase; color:var(--gold);
+  }
+  .refbox label span{color:var(--ink-dim); letter-spacing:0.08em;}
+  .refbox input{
+    width:100%;
+    background:rgba(5,13,9,0.7);
+    border:1px solid var(--gold-soft);
+    color:var(--parchment);
+    font-family:'JetBrains Mono', monospace; font-size:0.95rem; letter-spacing:0.1em;
+    text-transform:uppercase;
+    padding:13px 14px;
+    border-radius:0;
+  }
+  .refbox input::placeholder{color:#4d5a52; text-transform:none; letter-spacing:0.04em;}
+  .refbox input:focus{outline:none; border-color:var(--flame); box-shadow:0 0 0 3px rgba(94,235,143,0.18);}
+  .refbox input:disabled{opacity:0.6; cursor:not-allowed;}
+  .refbox .hint{margin-top:8px; color:var(--ink-dim); font-size:0.94rem; line-height:1.45;}
+  .refbox .hint.bad{color:#f0917f;}
+
   .gbtn{
     width:100%; display:flex; align-items:center; justify-content:center; gap:12px;
     font-family:'JetBrains Mono', monospace; font-size:0.82rem; letter-spacing:0.1em;
@@ -147,6 +171,20 @@
     <div class="card">
       <h2>Sign in to the Order</h2>
       <p class="why">Your Google account keeps your points and streak tied to you. Your email is never shown to other Wardens.</p>
+
+      <div class="refbox">
+        <label for="ref-code">Referral code <span>(optional)</span></label>
+        <input
+          id="ref-code"
+          type="text"
+          maxlength="16"
+          autocomplete="off"
+          autocapitalize="characters"
+          spellcheck="false"
+          placeholder="Enter a referral code, or leave blank">
+        <p class="hint" id="ref-hint">Invited by a Warden? Enter their code. No code? Just sign in below.</p>
+      </div>
+
       <button class="gbtn" id="google" type="button">
         <svg viewBox="0 0 48 48" aria-hidden="true">
           <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.5 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.3 13.2 17.6 9.5 24 9.5z"/>
@@ -185,6 +223,25 @@
   const btn = $('#google');
   const label = $('#google-label');
   const statusEl = $('#status');
+  const refInput = $('#ref-code');
+  const refHint = $('#ref-hint');
+
+  /* The Google sign-in leaves this page and comes back, so the referral
+     code is kept in the browser until the session exists. */
+  const REF_KEY = 'gw_pending_ref';
+
+  function cleanRef(v){
+    return String(v || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+  function getPendingRef(){
+    try{ return cleanRef(localStorage.getItem(REF_KEY)); }catch(e){ return ''; }
+  }
+  function setPendingRef(code){
+    try{ localStorage.setItem(REF_KEY, code); }catch(e){}
+  }
+  function clearPendingRef(){
+    try{ localStorage.removeItem(REF_KEY); }catch(e){}
+  }
 
   function say(text, kind){
     statusEl.textContent = text;
@@ -210,6 +267,21 @@
 
   const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
+  /* ---------- prefill the referral box ---------- */
+  // A shared link like index.html?ref=GW8F4K2 fills the box automatically.
+  // Otherwise fall back to a code saved from an earlier attempt.
+  (function(){
+    let fromUrl = '';
+    try{ fromUrl = cleanRef(new URLSearchParams(location.search).get('ref')); }catch(e){}
+    const start = fromUrl || getPendingRef();
+    if (start) refInput.value = start;
+  })();
+
+  refInput.addEventListener('input', function(){
+    refHint.className = 'hint';
+    refHint.textContent = 'Invited by a Warden? Enter their code. No code? Just sign in below.';
+  });
+
   /* ---------- an error coming back from Google/Supabase ---------- */
   const back = new URLSearchParams(
     location.hash.startsWith('#') ? location.hash.slice(1) : location.search.slice(1)
@@ -223,15 +295,32 @@
   }
 
   /* ---------- already signed in, or just came back with a session ---------- */
-  function toDashboard(){
+  // Sends the saved referral code to Supabase (the server decides if it is valid),
+  // then clears it. Only a network failure keeps it for another try.
+  async function attachPendingReferral(){
+    const code = getPendingRef();
+    if (!code) return;
+    try{
+      const { error } = await sb.rpc('attach_referral', { p_referral_code: code });
+      if (!error) clearPendingRef();
+    }catch(e){ /* keep the code and retry next time */ }
+  }
+
+  let leaving = false;
+  async function toDashboard(){
+    if (leaving) return;
+    leaving = true;
     label.textContent = 'Opening your dashboard…';
     btn.disabled = true;
+    refInput.disabled = true;
     say('Welcome back, Warden.', 'ok');
+    await attachPendingReferral();
     window.location.replace(DASHBOARD);
   }
 
   sb.auth.onAuthStateChange((event, session) => {
-    if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) toDashboard();
+    // Deferred so Supabase calls never run inside this callback.
+    if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) setTimeout(toDashboard, 0);
   });
 
   try{
@@ -241,7 +330,18 @@
 
   /* ---------- sign in ---------- */
   btn.addEventListener('click', async function(){
+    // Referral code is optional: blank means sign in normally.
+    const code = cleanRef(refInput.value);
+    if (refInput.value.trim() && (code.length < 4 || code.length > 16)){
+      refHint.className = 'hint bad';
+      refHint.textContent = 'That referral code doesn\'t look right. Check it, or clear the box to sign in without one.';
+      refInput.focus();
+      return;
+    }
+    if (code) setPendingRef(code); else clearPendingRef();
+
     btn.disabled = true;
+    refInput.disabled = true;
     label.textContent = 'Opening Google…';
     say('');
     // Come back to this page; the redirect above then sends you to the dashboard.
@@ -258,6 +358,7 @@
         ? 'Google isn\'t enabled on this project yet. Turn it on in Supabase under Authentication → Sign In / Providers → Google.'
         : 'Couldn\'t start Google sign-in. Please try again.', 'bad');
       btn.disabled = false;
+      refInput.disabled = false;
       label.textContent = 'Continue with Google';
     }
   });
