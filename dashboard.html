@@ -710,6 +710,23 @@ h1,h2,h3{
 }
 
 /* =========================================================
+   REFERRAL PANEL
+   ========================================================= */
+.referral-card{margin-top:20px;border:1px solid var(--gold-soft);background:radial-gradient(ellipse at 10% 30%,rgba(94,235,143,.08),transparent 55%),var(--panel);padding:26px 28px}
+.referral-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin-top:18px}
+.referral-box{border:1px solid var(--line);background:rgba(5,13,9,.45);padding:16px}
+.referral-label{font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin-bottom:8px}
+.referral-code{font-family:'JetBrains Mono',monospace;font-size:1.15rem;color:var(--flame);letter-spacing:.12em;word-break:break-all}
+.referral-link-row,.referral-manual-row{display:flex;gap:8px;margin-top:10px}
+.referral-link-row input,.referral-manual-row input{flex:1;min-width:0;background:rgba(5,13,9,.7);border:1px solid var(--gold-soft);color:var(--parchment);font-family:'JetBrains Mono',monospace;font-size:.75rem;padding:10px 12px}
+.referral-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);margin-top:16px}
+.referral-stat{background:rgba(5,13,9,.7);padding:14px}
+.referral-stat .k{color:var(--ink-dim);font-family:'JetBrains Mono',monospace;font-size:.62rem;letter-spacing:.08em;text-transform:uppercase}
+.referral-stat .v{margin-top:5px;color:var(--parchment);font-family:'Cinzel',serif;font-size:1.35rem;font-weight:700}
+.referral-msg{min-height:1.2em;margin-top:10px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;font-size:.72rem}
+.referral-msg.ok{color:var(--flame)}.referral-msg.bad{color:#f0917f}
+@media(max-width:760px){.referral-grid{grid-template-columns:1fr}.referral-stats{grid-template-columns:1fr}.referral-link-row,.referral-manual-row{flex-direction:column}}
+/* =========================================================
    ADMIN REVIEW
    ========================================================= */
 
@@ -2809,6 +2826,39 @@ html{
   </div>
 
   <!-- =======================================================
+       REFERRAL SYSTEM
+       ======================================================= -->
+  <section class="referral-card participant-only" aria-labelledby="referral-title">
+    <span class="eyebrow">Warden Alliance</span>
+    <h2 class="ci-title" id="referral-title">Invite another Warden</h2>
+    <p class="ci-sub">Share your referral link. A successful referral earns the referrer +200 WP, and an invited Warden who remains active for 7 consecutive activity days can trigger the additional referral reward.</p>
+    <div class="referral-grid">
+      <div class="referral-box">
+        <div class="referral-label">Your referral code</div>
+        <div class="referral-code" id="ref-code">Loading…</div>
+        <div class="referral-link-row">
+          <input id="ref-link" type="text" readonly aria-label="Your referral link">
+          <button class="btn small" id="ref-copy" type="button">Copy</button>
+        </div>
+        <div class="referral-msg" id="ref-msg"></div>
+      </div>
+      <div class="referral-box">
+        <div class="referral-label">Use a referral code</div>
+        <div class="referral-manual-row">
+          <input id="ref-input" type="text" maxlength="32" placeholder="Enter code" aria-label="Referral code">
+          <button class="btn small primary" id="ref-attach" type="button">Attach</button>
+        </div>
+        <div class="referral-msg" id="ref-activity-msg">If you joined through someone else's link, your code can be attached once.</div>
+      </div>
+    </div>
+    <div class="referral-stats">
+      <div class="referral-stat"><div class="k">Referrals</div><div class="v" id="ref-total">0</div></div>
+      <div class="referral-stat"><div class="k">Referral WP</div><div class="v" id="ref-earned">0</div></div>
+      <div class="referral-stat"><div class="k">Your activity streak</div><div class="v" id="ref-streak">0 / 7</div></div>
+    </div>
+  </section>
+
+  <!-- =======================================================
        ADMIN REVIEW PANEL
        Visible only to authorized Green Warden admins.
        ======================================================= -->
@@ -4149,74 +4199,55 @@ html{
       data;
 
     /*
-      The social-task system has its own secure task-board RPC.
-      Keep get_my_status() as the source for the rest of the dashboard,
-      then merge the task-board data into S so no existing dashboard
-      features are changed.
+      Load the task board without changing get_my_status().
+      Support both the supplied SQL shape (array) and the manual-review
+      shape ({ok,tasks,task_claims}).
     */
     try{
+      const {data:taskBoard,error:taskBoardError}=await sb.rpc('get_task_board');
+      if(taskBoardError) throw taskBoardError;
 
-      const {
-        data:taskBoard,
-        error:taskBoardError
-      } =
-        await sb.rpc(
-          'get_task_board'
-        );
+      if(Array.isArray(taskBoard)){
+        S.tasks=taskBoard.map(t=>({
+          id:t.id,label:t.title,description:t.description||'',
+          platform:t.platform,task_type:t.task_type,url:t.task_url,
+          wp_reward:Number(t.reward_wp||0),needs_proof:true,completed:!!t.completed
+        }));
 
-      if(taskBoardError){
-        throw taskBoardError;
-      }
+        const {data:claims,error:claimsError}=await sb.from('task_claims')
+          .select('id,task_id,user_id,proof_url,wp_awarded,status,created_at')
+          .eq('user_id',session.user.id);
 
-      if(taskBoard && taskBoard.ok){
-
-        S.tasks =
-          Array.isArray(taskBoard.tasks)
-            ? taskBoard.tasks
-            : [];
-
-        S.task_claims =
-          Array.isArray(taskBoard.task_claims)
-            ? taskBoard.task_claims
-            : [];
-
+        if(claimsError){
+          console.warn('Task claims load error:',claimsError);
+          S.task_claims=[];
+        }else{
+          S.task_claims=Array.isArray(claims)?claims.map(c=>({...c,claimed_at:c.created_at})):[];
+        }
+      }else if(taskBoard&&taskBoard.ok){
+        S.tasks=Array.isArray(taskBoard.tasks)?taskBoard.tasks.map(t=>({
+          ...t,label:t.label||t.title,url:t.url||t.task_url,
+          wp_reward:Number(t.wp_reward??t.reward_wp??0),
+          needs_proof:t.needs_proof!==false
+        })):[];
+        S.task_claims=Array.isArray(taskBoard.task_claims)?taskBoard.task_claims:[];
       }else{
-
-        S.tasks =
-          Array.isArray(S.tasks)
-            ? S.tasks
-            : [];
-
-        S.task_claims =
-          Array.isArray(S.task_claims)
-            ? S.task_claims
-            : [];
-
+        S.tasks=Array.isArray(S.tasks)?S.tasks:[];
+        S.task_claims=Array.isArray(S.task_claims)?S.task_claims:[];
       }
-
     }catch(taskError){
+      console.error('Task board load error:',taskError);
+      S.tasks=Array.isArray(S.tasks)?S.tasks:[];
+      S.task_claims=Array.isArray(S.task_claims)?S.task_claims:[];
+    }
 
-      console.error(
-        'Task board load error:',
-        taskError
-      );
-
-      /*
-        Do not break the rest of the dashboard if the task board
-        has a temporary problem. The task UI will show the fallback
-        tasks only when appropriate.
-      */
-
-      S.tasks =
-        Array.isArray(S.tasks)
-          ? S.tasks
-          : [];
-
-      S.task_claims =
-        Array.isArray(S.task_claims)
-          ? S.task_claims
-          : [];
-
+    try{
+      const {data:refData,error:refError}=await sb.rpc('get_my_referral_data');
+      if(refError) throw refError;
+      S.referral=refData&&typeof refData==='object'?refData:null;
+    }catch(refError){
+      console.warn('Referral dashboard load error:',refError);
+      S.referral=null;
     }
 
     fetchedAt =
@@ -4311,6 +4342,7 @@ html{
     renderHome();
     renderSwordProgress();
     renderTasks();
+    renderReferral();
     renderProfile();
 
   }
@@ -4825,7 +4857,13 @@ html{
 
           try{
 
-            await loadStatus();
+            try{
+             await sb.rpc('record_portal_activity');
+           }catch(activityError){
+             console.warn('Referral activity record failed:',activityError);
+           }
+
+           await loadStatus();
 
           }catch(_){
 
@@ -4967,10 +5005,13 @@ html{
     tasks.forEach(task => {
 
       const claim =
+        claims.get(String(task.id)) ||
         claims.get(task.id);
 
       const status =
-        taskClaimStatus(claim);
+        claim
+          ? taskClaimStatus(claim)
+          : (task.completed ? 'approved' : 'new');
 
       const isApproved =
         status === 'approved';
@@ -6304,9 +6345,90 @@ html{
     }
   });
 
+  /* ---------- referral UI ---------- */
+
+  function setReferralMsg(text,kind){
+    const node=$('#ref-msg'); if(!node)return;
+    node.textContent=text||'';
+    node.className='referral-msg'+(kind?' '+kind:'');
+  }
+
+  function setReferralActivityMsg(text,kind){
+    const node=$('#ref-activity-msg'); if(!node)return;
+    node.textContent=text||'';
+    node.className='referral-msg'+(kind?' '+kind:'');
+  }
+
+  function renderReferral(){
+    const data=S&&S.referral?S.referral:null;
+    const code=data&&data.referral_code?String(data.referral_code):'';
+    $('#ref-code').textContent=code||'Unavailable';
+    $('#ref-link').value=code
+      ? new URL(window.location.href).origin+window.location.pathname+'?ref='+encodeURIComponent(code)
+      : '';
+    $('#ref-total').textContent=fmt(data?data.total_referrals:0);
+    $('#ref-earned').textContent=fmt(data?data.total_wp_earned:0);
+    $('#ref-streak').textContent=fmt(data?data.my_activity_streak:0)+' / 7';
+
+    const already=!!(data&&data.has_been_referred);
+    $('#ref-input').disabled=already;
+    $('#ref-attach').disabled=already;
+    if(already){
+      setReferralActivityMsg(
+        data.my_7_day_qualified?'Your referral activity has qualified.':'This account already has a referral attached.',
+        'ok'
+      );
+    }
+  }
+
+  async function attachReferral(code){
+    const clean=String(code||'').trim().toUpperCase();
+    if(!clean){setReferralActivityMsg('Enter a referral code first.','bad');return;}
+    const btn=$('#ref-attach'),original=btn.textContent;
+    btn.disabled=true;btn.textContent='Attaching…';
+    setReferralActivityMsg('Attaching referral code…');
+    try{
+      const {data,error}=await sb.rpc('attach_referral',{p_code:clean});
+      if(error)throw error;
+      if(!data||!data.success){
+        setReferralActivityMsg((data&&data.message)||'Referral code could not be attached.','bad');
+        return;
+      }
+      $('#ref-input').value='';
+      setReferralActivityMsg('Referral attached successfully. The referrer received +200 WP.','ok');
+      await loadStatus();
+    }catch(e){
+      console.error('Referral attach error:',e);
+      setReferralActivityMsg('Could not attach the referral code. Please try again.','bad');
+    }finally{
+      btn.textContent=original;
+      btn.disabled=!!(S&&S.referral&&S.referral.has_been_referred);
+    }
+  }
+
+  $('#ref-copy').addEventListener('click',async()=>{
+    const input=$('#ref-link'),value=input?input.value:'';
+    if(!value){setReferralMsg('Your referral link is not ready yet.','bad');return;}
+    try{await navigator.clipboard.writeText(value)}catch(_){input.select();document.execCommand('copy')}
+    setReferralMsg('Referral link copied.','ok');
+  });
+
+  $('#ref-attach').addEventListener('click',()=>attachReferral($('#ref-input').value));
+  $('#ref-input').addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();attachReferral(e.currentTarget.value);}
+  });
+
+  async function tryAttachReferralFromUrl(){
+    const code=new URLSearchParams(window.location.search).get('ref');
+    if(!code||!session||!session.user)return;
+    if(S&&S.referral&&S.referral.has_been_referred)return;
+    await attachReferral(code);
+  }
+
   /* ---------- profile ---------- */
 
   function renderProfile(){
+
 
     $('#acct-avatar')
       .replaceChildren(
@@ -6675,6 +6797,8 @@ html{
   try{
 
     await loadStatus();
+
+    await tryAttachReferralFromUrl();
 
     $('#boot')
       .classList
