@@ -60,17 +60,17 @@
   .gate{width:100%; max-width:470px; text-align:center;}
 
   .candle{
-  width:150px;
-  height:180px;
-  margin:0 auto 26px;
-  display:block;
-  object-fit:contain;
-  filter:
-    drop-shadow(0 0 10px rgba(94,235,143,.65))
-    drop-shadow(0 0 28px rgba(94,235,143,.35));
-  animation:wardenGatePulse 2.8s ease-in-out infinite;
+    width:150px;
+    height:180px;
+    margin:0 auto 26px;
+    display:block;
+    object-fit:contain;
+    filter:
+      drop-shadow(0 0 10px rgba(94,235,143,.65))
+      drop-shadow(0 0 28px rgba(94,235,143,.35));
+    animation:wardenGatePulse 2.8s ease-in-out infinite;
   }
-  
+
   @keyframes wardenGatePulse{
     0%,100%{
       transform:scale(1);
@@ -282,7 +282,7 @@
     const code = getPendingRef();
     if (!code) return;
     try{
-      const { error } = await sb.rpc('attach_referral', { p_referral_code: code });
+      const { error } = await sb.rpc('attach_referral', { p_code: code });
       if (!error) clearPendingRef();
     }catch(e){ /* keep the code and retry next time */ }
   }
